@@ -8,6 +8,26 @@ interface RouteContext {
   params: Promise<{ id: string }>;
 }
 
+const DEFAULT_ROOM_SHAPE = "rectangle";
+const DEFAULT_WALL_COLOR = "#e2e8f0";
+const DEFAULT_FLOOR_COLOR = "#f3f4f6";
+const DEFAULT_LIGHT_INTENSITY = 1;
+
+const normalizeColor = (value: unknown, fallback: string) => {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallback;
+};
+
+const normalizeRoomShape = (value: unknown) => {
+  return value === "square" ? "square" : DEFAULT_ROOM_SHAPE;
+};
+
+const normalizeLightIntensity = (value: unknown) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return DEFAULT_LIGHT_INTENSITY;
+  return Math.min(2, Math.max(0.2, value));
+};
+
 async function getAuthorizedUser(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -61,7 +81,17 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     }
 
     const { id } = await context.params;
-    const { title, roomWidthFeet, roomHeightFeet, furniture } = await req.json();
+    const body = await req.json();
+    const {
+      title,
+      roomWidthFeet,
+      roomHeightFeet,
+      roomShape,
+      wallColor,
+      floorColor,
+      lightIntensity,
+      furniture,
+    } = body;
 
     const updated = await Design.findOneAndUpdate(
       { _id: id, userId: user._id },
@@ -69,9 +99,13 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         ...(typeof title === "string" ? { title } : {}),
         ...(typeof roomWidthFeet === "number" ? { roomWidthFeet } : {}),
         ...(typeof roomHeightFeet === "number" ? { roomHeightFeet } : {}),
+        ...(roomShape !== undefined ? { roomShape: normalizeRoomShape(roomShape) } : {}),
+        ...(wallColor !== undefined ? { wallColor: normalizeColor(wallColor, DEFAULT_WALL_COLOR) } : {}),
+        ...(floorColor !== undefined ? { floorColor: normalizeColor(floorColor, DEFAULT_FLOOR_COLOR) } : {}),
+        ...(lightIntensity !== undefined ? { lightIntensity: normalizeLightIntensity(lightIntensity) } : {}),
         ...(Array.isArray(furniture) ? { furniture } : {}),
       },
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!updated) {

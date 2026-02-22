@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 // Import your new Sidebar component (Adjust the path as needed based on your folder structure)
 import Sidebar from "./Sidebar"; 
+import ThreeDView from "./ThreeDView";
 
 const GRID_SIZE_INCHES = 1;
 const MAJOR_GRID_INTERVAL_INCHES = 12;
@@ -21,6 +22,8 @@ type FurnitureItem = {
   height: number;
   fill: string;
   rotation: number;
+  heightFeet?: number;
+  type?: string;
 };
 
 type LoadedDesign = {
@@ -28,12 +31,111 @@ type LoadedDesign = {
   roomWidthFeet: number;
   roomHeightFeet: number;
   furniture: FurnitureItem[];
+  roomShape?: string;
+  wallColor?: string;
+  floorColor?: string;
+  lightIntensity?: number;
 };
+
+type FurnitureLibraryItem = {
+  id: string;
+  name: string;
+  category: string;
+  widthInches: number;
+  depthInches: number;
+  heightFeet: number;
+  defaultColor: string;
+};
+
+const FURNITURE_LIBRARY: FurnitureLibraryItem[] = [
+  {
+    id: "sofa-3-seater",
+    name: "3 Seater Sofa",
+    category: "sofa",
+    widthInches: 84,
+    depthInches: 36,
+    heightFeet: 2.5,
+    defaultColor: "#059669",
+  },
+  {
+    id: "queen-bed",
+    name: "Queen Bed",
+    category: "bed",
+    widthInches: 60,
+    depthInches: 80,
+    heightFeet: 2,
+    defaultColor: "#3b82f6",
+  },
+  {
+    id: "coffee-table",
+    name: "Coffee Table",
+    category: "table",
+    widthInches: 48,
+    depthInches: 24,
+    heightFeet: 1.5,
+    defaultColor: "#f59e0b",
+  },
+];
 
 export default function EditorPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const designId = searchParams.get("designId");
+
+  const addFurnitureToRoom = (item: FurnitureLibraryItem) => {
+    const widthPx = item.widthInches * PIXELS_PER_INCH;
+    const heightPx = item.depthInches * PIXELS_PER_INCH;
+    const spacing = 10;
+    const step = 20;
+
+    setFurniture((prev) => {
+      const maxX = Math.max(0, STAGE_WIDTH - widthPx);
+      const maxY = Math.max(0, STAGE_HEIGHT - heightPx);
+
+      const isSpotTaken = (x: number, y: number) =>
+        prev.some((f) =>
+          x < f.x + f.width + spacing &&
+          x + widthPx + spacing > f.x &&
+          y < f.y + f.height + spacing &&
+          y + heightPx + spacing > f.y
+        );
+
+      let x = 40;
+      let y = 40;
+      let found = false;
+
+      for (let yy = 0; yy <= maxY && !found; yy += step) {
+        for (let xx = 0; xx <= maxX; xx += step) {
+          if (!isSpotTaken(xx, yy)) {
+            x = xx;
+            y = yy;
+            found = true;
+            break;
+          }
+        }
+      }
+
+      if (!found) {
+        x = Math.max(0, Math.min(40 + prev.length * 20, maxX));
+        y = Math.max(0, Math.min(40 + prev.length * 20, maxY));
+      }
+
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          x,
+          y,
+          width: widthPx,
+          height: heightPx,
+          fill: item.defaultColor,
+          rotation: 0,
+          heightFeet: item.heightFeet,
+          type: item.id,
+        },
+      ];
+    });
+  };
 
   /* ---------------- ROOM SIZE STATE ---------------- */
   const [roomWidthFeet, setRoomWidthFeet] = useState(12);
@@ -47,29 +149,16 @@ export default function EditorPage() {
 
   const GRID_SIZE = GRID_SIZE_INCHES * PIXELS_PER_INCH;
 
+  const [roomShape, setRoomShape] = useState("rectangle");
+  const [wallColor, setWallColor] = useState("#e2e8f0");
+  const [floorColor, setFloorColor] = useState("#f3f4f6");
+
   /* ---------------- FURNITURE STATE ---------------- */
-  const [furniture, setFurniture] = useState<FurnitureItem[]>([
-    {
-      id: "1",
-      x: 120,
-      y: 120,
-      width: 120,
-      height: 80,
-      fill: "#059669", // Emerald-600
-      rotation: 0,
-    },
-    {
-      id: "2",
-      x: 320,
-      y: 120,
-      width: 120,
-      height: 80,
-      fill: "#3b82f6", // Blue-500
-      rotation: 0,
-    },
-  ]);
+  const [furniture, setFurniture] = useState<FurnitureItem[]>([]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
+  const [lightIntensity, setLightIntensity] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [saving, setSaving] = useState(false);
   const [currentDesignId, setCurrentDesignId] = useState<string | null>(designId);
@@ -148,6 +237,10 @@ export default function EditorPage() {
         setRoomWidthFeet(data.roomWidthFeet);
         setRoomHeightFeet(data.roomHeightFeet);
         setFurniture(data.furniture ?? []);
+        setRoomShape(data.roomShape || "rectangle");
+        setWallColor(data.wallColor || "#e2e8f0");
+        setFloorColor(data.floorColor || "#f3f4f6");
+        setLightIntensity(typeof data.lightIntensity === "number" ? data.lightIntensity : 1);
         setCurrentDesignId(data._id);
         setSelectedId(null);
       } catch (error) {
@@ -164,6 +257,33 @@ export default function EditorPage() {
       setSelectedId(null);
     }
   };
+
+  const handleDeleteSelected = () => {
+    if (!selectedId) return;
+    setFurniture((prev) => prev.filter((item) => item.id !== selectedId));
+    setSelectedId(null);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!selectedId) return;
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+
+      const target = e.target as HTMLElement | null;
+      const isTypingTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable;
+      if (isTypingTarget) return;
+
+      e.preventDefault();
+      setFurniture((prev) => prev.filter((item) => item.id !== selectedId));
+      setSelectedId(null);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedId]);
 
   const handleSaveDesign = async () => {
     try {
@@ -188,6 +308,10 @@ export default function EditorPage() {
           title: "My Design",
           roomWidthFeet,
           roomHeightFeet,
+          roomShape,
+          wallColor,
+          floorColor,
+          lightIntensity,
           furniture,
         }),
       });
@@ -239,6 +363,18 @@ export default function EditorPage() {
         roomHeightFeet={roomHeightFeet}
         setRoomWidthFeet={setRoomWidthFeet}
         setRoomHeightFeet={setRoomHeightFeet}
+        roomShape={roomShape}
+        setRoomShape={setRoomShape}
+        wallColor={wallColor}
+        setWallColor={setWallColor}
+        floorColor={floorColor}
+        setFloorColor={setFloorColor}
+        lightIntensity={lightIntensity}
+        setLightIntensity={setLightIntensity}
+        furnitureLibrary={FURNITURE_LIBRARY}
+        addFurnitureToRoom={addFurnitureToRoom}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
       />
 
       {/* CANVAS AREA */}
@@ -289,21 +425,38 @@ export default function EditorPage() {
               >
                 {saving ? "Saving..." : "Save"}
               </button>
+              <button
+                type="button"
+                onClick={handleDeleteSelected}
+                disabled={!selectedId}
+                className="h-8 px-3 rounded-lg border border-red-200 bg-red-50 text-xs font-bold text-red-700 hover:bg-red-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Delete Selected
+              </button>
             </div>
           </div>
 
           {/* Scrollable viewport keeps big rooms contained inside page */}
           <div className="flex-1 min-h-0 overflow-auto bg-gray-50/50 p-4">
-            <div style={{ width: scaledStageWidth, height: scaledStageHeight }}>
-              <Stage
-                width={scaledStageWidth}
-                height={scaledStageHeight}
-                scaleX={clampedZoom}
-                scaleY={clampedZoom}
-                className="cursor-crosshair"
-                onPointerDown={checkDeselect}
-              >
-                <Layer>
+            {viewMode === "2d" ? (
+              <div style={{ width: scaledStageWidth, height: scaledStageHeight }}>
+                <Stage
+                  width={scaledStageWidth}
+                  height={scaledStageHeight}
+                  scaleX={clampedZoom}
+                  scaleY={clampedZoom}
+                  className="cursor-crosshair"
+                  onPointerDown={checkDeselect}
+                >
+                  <Layer>
+                  {/* ROOM FLOOR */}
+                  <Rect
+                    x={0}
+                    y={0}
+                    width={STAGE_WIDTH}
+                    height={STAGE_HEIGHT}
+                    fill={floorColor}
+                  />
 
                   {/* VERTICAL GRID (1 inch spacing) */}
                   {verticalIndices.map((i) => {
@@ -343,8 +496,8 @@ export default function EditorPage() {
                     y={0}
                     width={STAGE_WIDTH}
                     height={STAGE_HEIGHT}
-                    stroke="#cbd5e1"
-                    strokeWidth={4}
+                    stroke={wallColor}
+                    strokeWidth={6}
                   />
 
                   {/* FURNITURE */}
@@ -376,18 +529,6 @@ export default function EditorPage() {
                           0,
                           Math.min(newY, STAGE_HEIGHT - item.height)
                         );
-
-                        if (
-                          isColliding(
-                            item.id,
-                            boundedX,
-                            boundedY,
-                            item.width,
-                            item.height
-                          )
-                        ) {
-                          return this.position();
-                        }
 
                         return { x: boundedX, y: boundedY };
                       }}
@@ -442,17 +583,22 @@ export default function EditorPage() {
                         node.scaleX(1);
                         node.scaleY(1);
 
-                        const newWidth = Math.max(40, node.width() * scaleX);
-                        const newHeight = Math.max(40, node.height() * scaleY);
+                        const unclampedWidth = Math.max(40, node.width() * scaleX);
+                        const unclampedHeight = Math.max(40, node.height() * scaleY);
 
                         const newX = Math.max(
                           0,
-                          Math.min(node.x(), STAGE_WIDTH - newWidth)
+                          Math.min(node.x(), STAGE_WIDTH - unclampedWidth)
                         );
                         const newY = Math.max(
                           0,
-                          Math.min(node.y(), STAGE_HEIGHT - newHeight)
+                          Math.min(node.y(), STAGE_HEIGHT - unclampedHeight)
                         );
+
+                        const maxWidthFromX = Math.max(40, STAGE_WIDTH - newX);
+                        const maxHeightFromY = Math.max(40, STAGE_HEIGHT - newY);
+                        const newWidth = Math.min(unclampedWidth, maxWidthFromX);
+                        const newHeight = Math.min(unclampedHeight, maxHeightFromY);
 
                         if (
                           isColliding(
@@ -490,28 +636,47 @@ export default function EditorPage() {
                   ))}
 
                   {/* CUSTOMIZED TRANSFORMER */}
-                  {selectedId && (
-                    <Transformer
-                      ref={trRef}
-                      rotateEnabled={true}
-                      anchorStroke="#059669"
-                      anchorFill="#ffffff"
-                      anchorSize={10}
-                      borderStroke="#059669"
-                      borderDash={[5, 5]}
-                      borderStrokeWidth={2}
-                      padding={2}
-                      boundBoxFunc={(oldBox, newBox) => {
-                        if (newBox.width < 40 || newBox.height < 40) {
-                          return oldBox;
-                        }
-                        return newBox;
-                      }}
-                    />
-                  )}
-                </Layer>
-              </Stage>
-            </div>
+                    {selectedId && (
+                      <Transformer
+                        ref={trRef}
+                        rotateEnabled={true}
+                        flipEnabled={false}
+                        anchorStroke="#059669"
+                        anchorFill="#ffffff"
+                        anchorSize={10}
+                        borderStroke="#059669"
+                        borderDash={[5, 5]}
+                        borderStrokeWidth={2}
+                        padding={2}
+                        boundBoxFunc={(oldBox, newBox) => {
+                          if (newBox.width < 40 || newBox.height < 40) {
+                            return oldBox;
+                          }
+                          const isOutOfBounds =
+                            newBox.x < 0 ||
+                            newBox.y < 0 ||
+                            newBox.x + newBox.width > STAGE_WIDTH ||
+                            newBox.y + newBox.height > STAGE_HEIGHT;
+                          if (isOutOfBounds) {
+                            return oldBox;
+                          }
+                          return newBox;
+                        }}
+                      />
+                    )}
+                  </Layer>
+                </Stage>
+              </div>
+            ) : (
+              <ThreeDView
+                roomWidthFeet={roomWidthFeet}
+                roomHeightFeet={roomHeightFeet}
+                furniture={furniture}
+                wallColor={wallColor}
+                floorColor={floorColor}
+                lightIntensity={lightIntensity}
+              />
+            )}
           </div>
 
         </div>

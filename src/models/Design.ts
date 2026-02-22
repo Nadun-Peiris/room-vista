@@ -13,6 +13,7 @@ const DesignSchema = new Schema(
       default: "Untitled Design",
     },
 
+    /* ROOM SPECIFICATIONS */
     roomWidthFeet: {
       type: Number,
       required: true,
@@ -23,6 +24,30 @@ const DesignSchema = new Schema(
       required: true,
     },
 
+    roomShape: {
+      type: String,
+      enum: ["rectangle", "square"], 
+      default: "rectangle",
+    },
+
+    wallColor: {
+      type: String,
+      default: "#e2e8f0",
+    },
+
+    floorColor: {
+      type: String,
+      default: "#f3f4f6",
+    },
+
+    lightIntensity: {
+      type: Number,
+      default: 1,
+      min: 0.2,
+      max: 2,
+    },
+
+    /* FURNITURE */
     furniture: {
       type: [
         {
@@ -41,5 +66,18 @@ const DesignSchema = new Schema(
   { timestamps: true }
 );
 
+if (models.Design) {
+  const existingSchema = (models.Design as mongoose.Model<unknown>).schema;
+  const hasRoomColorPaths =
+    Boolean(existingSchema.path("wallColor")) &&
+    Boolean(existingSchema.path("floorColor")) &&
+    Boolean(existingSchema.path("roomShape")) &&
+    Boolean(existingSchema.path("lightIntensity"));
+
+  if (!hasRoomColorPaths) {
+    delete models.Design;
+  }
+}
+
 export const Design =
-  models.Design || model("Design", DesignSchema);
+  (models.Design as mongoose.Model<unknown>) || model("Design", DesignSchema);

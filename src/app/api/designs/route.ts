@@ -4,6 +4,26 @@ import { connectDB } from "@/lib/mongodb";
 import { User } from "@/models/User";
 import { Design } from "@/models/Design";
 
+const DEFAULT_ROOM_SHAPE = "rectangle";
+const DEFAULT_WALL_COLOR = "#e2e8f0";
+const DEFAULT_FLOOR_COLOR = "#f3f4f6";
+const DEFAULT_LIGHT_INTENSITY = 1;
+
+const normalizeColor = (value: unknown, fallback: string) => {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallback;
+};
+
+const normalizeRoomShape = (value: unknown) => {
+  return value === "square" ? "square" : DEFAULT_ROOM_SHAPE;
+};
+
+const normalizeLightIntensity = (value: unknown) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return DEFAULT_LIGHT_INTENSITY;
+  return Math.min(2, Math.max(0.2, value));
+};
+
 export async function POST(req: NextRequest) {
   try {
     await connectDB();
@@ -30,13 +50,26 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { title, roomWidthFeet, roomHeightFeet, furniture } = body;
+    const {
+      title,
+      roomWidthFeet,
+      roomHeightFeet,
+      roomShape,
+      wallColor,
+      floorColor,
+      lightIntensity,
+      furniture,
+    } = body;
 
     const design = await Design.create({
       userId: user._id,
       title,
       roomWidthFeet,
       roomHeightFeet,
+      roomShape: normalizeRoomShape(roomShape),
+      wallColor: normalizeColor(wallColor, DEFAULT_WALL_COLOR),
+      floorColor: normalizeColor(floorColor, DEFAULT_FLOOR_COLOR),
+      lightIntensity: normalizeLightIntensity(lightIntensity),
       furniture,
     });
 
