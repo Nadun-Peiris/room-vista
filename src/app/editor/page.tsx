@@ -48,6 +48,36 @@ type FurnitureLibraryItem = {
   defaultColor: string;
 };
 
+const serializeDesignSnapshot = ({
+  title,
+  roomWidthFeet,
+  roomHeightFeet,
+  roomShape,
+  wallColor,
+  floorColor,
+  lightIntensity,
+  furniture,
+}: {
+  title: string;
+  roomWidthFeet: number;
+  roomHeightFeet: number;
+  roomShape: string;
+  wallColor: string;
+  floorColor: string;
+  lightIntensity: number;
+  furniture: FurnitureItem[];
+}) =>
+  JSON.stringify({
+    title,
+    roomWidthFeet,
+    roomHeightFeet,
+    roomShape,
+    wallColor,
+    floorColor,
+    lightIntensity,
+    furniture,
+  });
+
 const FURNITURE_LIBRARY: FurnitureLibraryItem[] = [
   {
     id: "sofa-3-seater",
@@ -255,6 +285,7 @@ function EditorPageContent() {
   const [showSaveSuccessPopup, setShowSaveSuccessPopup] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState("Design saved successfully!");
   const [showExitConfirmPopup, setShowExitConfirmPopup] = useState(false);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
   const [renamingProject, setRenamingProject] = useState(false);
   const shapeRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -377,6 +408,19 @@ function EditorPageContent() {
         setLightIntensity(typeof data.lightIntensity === "number" ? data.lightIntensity : 1);
         setCurrentDesignId(data._id);
         setSelectedId(null);
+        setLastSavedSnapshot(
+          serializeDesignSnapshot({
+            title: data.title?.trim() || "Untitled Design",
+            roomWidthFeet: data.roomWidthFeet,
+            roomHeightFeet: data.roomHeightFeet,
+            roomShape: data.roomShape || "rectangle",
+            wallColor: data.wallColor || "#e2e8f0",
+            floorColor: data.floorColor || "#f3f4f6",
+            lightIntensity:
+              typeof data.lightIntensity === "number" ? data.lightIntensity : 1,
+            furniture: data.furniture ?? [],
+          })
+        );
       } catch (error) {
         console.error("Load design error:", error);
       }
@@ -457,11 +501,24 @@ function EditorPageContent() {
 
       const data = await res.json();
       console.log("Saved design:", data);
-      setProjectName(data?.title?.trim() || projectName.trim() || "Untitled Design");
+      const savedTitle = data?.title?.trim() || projectName.trim() || "Untitled Design";
+      setProjectName(savedTitle);
       if (!isUpdate && data?._id) {
         setCurrentDesignId(data._id);
         router.replace(`/editor?designId=${data._id}`);
       }
+      setLastSavedSnapshot(
+        serializeDesignSnapshot({
+          title: savedTitle,
+          roomWidthFeet,
+          roomHeightFeet,
+          roomShape,
+          wallColor,
+          floorColor,
+          lightIntensity,
+          furniture,
+        })
+      );
 
       if (showSuccessPopup) {
         setSaveSuccessMessage(
@@ -479,6 +536,10 @@ function EditorPageContent() {
   };
 
   const handleRequestExit = () => {
+    if (!hasUnsavedChanges) {
+      router.push("/dashboard");
+      return;
+    }
     setShowExitConfirmPopup(true);
   };
 
@@ -532,7 +593,20 @@ function EditorPageContent() {
       }
 
       const data = await res.json();
-      setProjectName(data?.title?.trim() || normalizedName);
+      const updatedTitle = data?.title?.trim() || normalizedName;
+      setProjectName(updatedTitle);
+      setLastSavedSnapshot(
+        serializeDesignSnapshot({
+          title: updatedTitle,
+          roomWidthFeet,
+          roomHeightFeet,
+          roomShape,
+          wallColor,
+          floorColor,
+          lightIntensity,
+          furniture,
+        })
+      );
     } catch (error) {
       console.error("Rename project error:", error);
       alert("Failed to update project name.");
@@ -555,6 +629,30 @@ function EditorPageContent() {
     () => Array.from({ length: horizontalLineCount + 1 }, (_, i) => i),
     [horizontalLineCount]
   );
+  const currentSnapshot = useMemo(
+    () =>
+      serializeDesignSnapshot({
+        title: projectName.trim() || "Untitled Design",
+        roomWidthFeet,
+        roomHeightFeet,
+        roomShape,
+        wallColor,
+        floorColor,
+        lightIntensity,
+        furniture,
+      }),
+    [
+      projectName,
+      roomWidthFeet,
+      roomHeightFeet,
+      roomShape,
+      wallColor,
+      floorColor,
+      lightIntensity,
+      furniture,
+    ]
+  );
+  const hasUnsavedChanges = lastSavedSnapshot === null || currentSnapshot !== lastSavedSnapshot;
 
   return (
     <div className="relative h-screen bg-gray-50 overflow-hidden font-sans flex">
@@ -971,17 +1069,17 @@ function EditorPageContent() {
 
       {showExitConfirmPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
             <h3 className="text-lg font-extrabold text-gray-900">Leave Editor?</h3>
             <p className="mt-2 text-sm text-gray-600">
               Do you want to save this design before going back to the dashboard?
             </p>
-            <div className="mt-6 flex items-center gap-3">
+            <div className="mt-6 flex justify-end gap-3 flex-wrap">
               <button
                 type="button"
                 onClick={() => setShowExitConfirmPopup(false)}
                 disabled={saving}
-                className="px-5 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-semibold whitespace-nowrap hover:bg-gray-50 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -989,7 +1087,7 @@ function EditorPageContent() {
                 type="button"
                 onClick={handleExitWithoutSave}
                 disabled={saving}
-                className="px-5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-semibold whitespace-nowrap hover:bg-gray-50 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 font-semibold hover:bg-red-100 disabled:opacity-50"
               >
                 Don&apos;t Save
               </button>
@@ -997,7 +1095,7 @@ function EditorPageContent() {
                 type="button"
                 onClick={handleSaveAndExit}
                 disabled={saving}
-                className="flex-1 min-w-[9.5rem] px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold whitespace-nowrap hover:bg-emerald-100 disabled:opacity-50"
+                className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100 disabled:opacity-50"
               >
                 {saving ? "Saving..." : "Save and Exit"}
               </button>
