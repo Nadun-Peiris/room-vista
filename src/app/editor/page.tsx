@@ -1,7 +1,7 @@
 "use client";
 
 import { Stage, Layer, Rect, Line, Transformer } from "react-konva";
-import { Suspense, useState, useRef, useEffect, useMemo } from "react";
+import { Suspense, useState, useRef, useEffect, useMemo, useCallback } from "react";
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -78,6 +78,85 @@ const FURNITURE_LIBRARY: FurnitureLibraryItem[] = [
   },
 ];
 
+type Point = { x: number; y: number };
+
+const getRotatedCorners = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotationDeg: number
+): Point[] => {
+  const theta = (rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+
+  const localCorners: Point[] = [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+
+  return localCorners.map((point) => ({
+    x: x + point.x * cos - point.y * sin,
+    y: y + point.x * sin + point.y * cos,
+  }));
+};
+
+const projectPolygon = (polygon: Point[], axis: Point) => {
+  const axisLength = Math.hypot(axis.x, axis.y);
+  if (axisLength === 0) return { min: 0, max: 0 };
+
+  const normalizedAxis = { x: axis.x / axisLength, y: axis.y / axisLength };
+  const dots = polygon.map((point) => point.x * normalizedAxis.x + point.y * normalizedAxis.y);
+
+  return { min: Math.min(...dots), max: Math.max(...dots) };
+};
+
+const polygonsIntersect = (a: Point[], b: Point[]) => {
+  const getAxes = (polygon: Point[]) =>
+    polygon.map((point, i) => {
+      const next = polygon[(i + 1) % polygon.length];
+      const edge = { x: next.x - point.x, y: next.y - point.y };
+      return { x: -edge.y, y: edge.x };
+    });
+
+  const axes = [...getAxes(a), ...getAxes(b)];
+
+  for (const axis of axes) {
+    const projectionA = projectPolygon(a, axis);
+    const projectionB = projectPolygon(b, axis);
+    if (projectionA.max <= projectionB.min || projectionB.max <= projectionA.min) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const areFurnitureItemsOverlapping = (
+  a: Pick<FurnitureItem, "x" | "y" | "width" | "height" | "rotation">,
+  b: Pick<FurnitureItem, "x" | "y" | "width" | "height" | "rotation">
+) => {
+  const cornersA = getRotatedCorners(a.x, a.y, a.width, a.height, a.rotation);
+  const cornersB = getRotatedCorners(b.x, b.y, b.width, b.height, b.rotation);
+  return polygonsIntersect(cornersA, cornersB);
+};
+
+const getRotatedExtents = (width: number, height: number, rotationDeg: number) => {
+  const corners = getRotatedCorners(0, 0, width, height, rotationDeg);
+  const xs = corners.map((point) => point.x);
+  const ys = corners.map((point) => point.y);
+
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
+};
+
 function EditorPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -96,10 +175,16 @@ function EditorPageContent() {
 
       const isSpotTaken = (x: number, y: number) =>
         prev.some((f) =>
-          x < f.x + f.width + spacing &&
-          x + widthPx + spacing > f.x &&
-          y < f.y + f.height + spacing &&
-          y + heightPx + spacing > f.y
+          areFurnitureItemsOverlapping(
+            { x: x - spacing / 2, y: y - spacing / 2, width: widthPx + spacing, height: heightPx + spacing, rotation: 0 },
+            {
+              x: f.x - spacing / 2,
+              y: f.y - spacing / 2,
+              width: f.width + spacing,
+              height: f.height + spacing,
+              rotation: f.rotation,
+            }
+          )
         );
 
       let x = 40;
@@ -171,6 +256,34 @@ function EditorPageContent() {
   const shapeRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
 
+  const clampRotatedPosition = useCallback((
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    rotationDeg: number
+  ) => {
+    const extents = getRotatedExtents(width, height, rotationDeg);
+    const minAllowedX = -extents.minX;
+    const maxAllowedX = STAGE_WIDTH - extents.maxX;
+    const minAllowedY = -extents.minY;
+    const maxAllowedY = STAGE_HEIGHT - extents.maxY;
+
+    const fallbackX = (minAllowedX + maxAllowedX) / 2;
+    const fallbackY = (minAllowedY + maxAllowedY) / 2;
+
+    const nextX =
+      minAllowedX > maxAllowedX
+        ? fallbackX
+        : Math.max(minAllowedX, Math.min(x, maxAllowedX));
+    const nextY =
+      minAllowedY > maxAllowedY
+        ? fallbackY
+        : Math.max(minAllowedY, Math.min(y, maxAllowedY));
+
+    return { x: nextX, y: nextY };
+  }, [STAGE_HEIGHT, STAGE_WIDTH]);
+
   /* ---------------- SNAP FUNCTION ---------------- */
   const snapToGrid = (value: number) => {
     return Math.round(value / GRID_SIZE) * GRID_SIZE;
@@ -182,17 +295,20 @@ function EditorPageContent() {
     newX: number,
     newY: number,
     newWidth: number,
-    newHeight: number
+    newHeight: number,
+    newRotation: number
   ) => {
+    const nextItem = {
+      x: newX,
+      y: newY,
+      width: newWidth,
+      height: newHeight,
+      rotation: newRotation,
+    };
+
     return furniture.some((item) => {
       if (item.id === id) return false;
-
-      return (
-        newX < item.x + item.width &&
-        newX + newWidth > item.x &&
-        newY < item.y + item.height &&
-        newY + newHeight > item.y
-      );
+      return areFurnitureItemsOverlapping(nextItem, item);
     });
   };
 
@@ -209,11 +325,16 @@ function EditorPageContent() {
     setFurniture((prev) =>
       prev.map((item) => ({
         ...item,
-        x: Math.max(0, Math.min(item.x, STAGE_WIDTH - item.width)),
-        y: Math.max(0, Math.min(item.y, STAGE_HEIGHT - item.height)),
+        ...clampRotatedPosition(
+          item.x,
+          item.y,
+          item.width,
+          item.height,
+          item.rotation
+        ),
       }))
     );
-  }, [STAGE_WIDTH, STAGE_HEIGHT]);
+  }, [clampRotatedPosition]);
 
   useEffect(() => {
     setCurrentDesignId(designId);
@@ -432,8 +553,6 @@ function EditorPageContent() {
         renamingProject={renamingProject}
         furnitureLibrary={FURNITURE_LIBRARY}
         addFurnitureToRoom={addFurnitureToRoom}
-        viewMode={viewMode}
-        setViewMode={setViewMode}
       />
 
       {/* CANVAS AREA */}
@@ -450,6 +569,28 @@ function EditorPageContent() {
               Workspace <span className="text-gray-600 ml-1">{roomWidthFeet}ft × {roomHeightFeet}ft</span>
             </span>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setViewMode(viewMode === "2d" ? "3d" : "2d")}
+                className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-700 hover:border-emerald-300 hover:text-emerald-700 transition"
+              >
+                {viewMode === "2d" ? (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 8l-9-5-9 5 9 5 9-5z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8v8l9 5 9-5V8" />
+                    </svg>
+                    Switch to 3D
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                    </svg>
+                    Switch to 2D
+                  </>
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => setZoom((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))))}
@@ -579,17 +720,18 @@ function EditorPageContent() {
                       dragBoundFunc={function (pos) {
                         const newX = snapToGrid(pos.x);
                         const newY = snapToGrid(pos.y);
-
-                        const boundedX = Math.max(
-                          0,
-                          Math.min(newX, STAGE_WIDTH - item.width)
-                        );
-                        const boundedY = Math.max(
-                          0,
-                          Math.min(newY, STAGE_HEIGHT - item.height)
+                        const bounded = clampRotatedPosition(
+                          newX,
+                          newY,
+                          item.width,
+                          item.height,
+                          item.rotation
                         );
 
-                        return { x: boundedX, y: boundedY };
+                        return {
+                          x: snapToGrid(bounded.x),
+                          y: snapToGrid(bounded.y),
+                        };
                       }}
 
                       onClick={(e) => {
@@ -601,22 +743,22 @@ function EditorPageContent() {
                         const node = e.target;
                         const newX = snapToGrid(node.x());
                         const newY = snapToGrid(node.y());
-                        const boundedX = Math.max(
-                          0,
-                          Math.min(newX, STAGE_WIDTH - item.width)
-                        );
-                        const boundedY = Math.max(
-                          0,
-                          Math.min(newY, STAGE_HEIGHT - item.height)
+                        const bounded = clampRotatedPosition(
+                          newX,
+                          newY,
+                          item.width,
+                          item.height,
+                          item.rotation
                         );
 
                         if (
                           isColliding(
                             item.id,
-                            boundedX,
-                            boundedY,
+                            bounded.x,
+                            bounded.y,
                             item.width,
-                            item.height
+                            item.height,
+                            item.rotation
                           )
                         ) {
                           node.position({ x: item.x, y: item.y });
@@ -626,7 +768,11 @@ function EditorPageContent() {
                         setFurniture((prev) =>
                           prev.map((f) =>
                             f.id === item.id
-                              ? { ...f, x: boundedX, y: boundedY }
+                              ? {
+                                  ...f,
+                                  x: snapToGrid(bounded.x),
+                                  y: snapToGrid(bounded.y),
+                                }
                               : f
                           )
                         );
@@ -642,22 +788,18 @@ function EditorPageContent() {
                         node.scaleX(1);
                         node.scaleY(1);
 
-                        const unclampedWidth = Math.max(40, node.width() * scaleX);
-                        const unclampedHeight = Math.max(40, node.height() * scaleY);
-
-                        const newX = Math.max(
-                          0,
-                          Math.min(node.x(), STAGE_WIDTH - unclampedWidth)
+                        const newWidth = Math.min(Math.max(40, node.width() * scaleX), STAGE_WIDTH);
+                        const newHeight = Math.min(Math.max(40, node.height() * scaleY), STAGE_HEIGHT);
+                        const rotation = node.rotation();
+                        const bounded = clampRotatedPosition(
+                          node.x(),
+                          node.y(),
+                          newWidth,
+                          newHeight,
+                          rotation
                         );
-                        const newY = Math.max(
-                          0,
-                          Math.min(node.y(), STAGE_HEIGHT - unclampedHeight)
-                        );
-
-                        const maxWidthFromX = Math.max(40, STAGE_WIDTH - newX);
-                        const maxHeightFromY = Math.max(40, STAGE_HEIGHT - newY);
-                        const newWidth = Math.min(unclampedWidth, maxWidthFromX);
-                        const newHeight = Math.min(unclampedHeight, maxHeightFromY);
+                        const newX = snapToGrid(bounded.x);
+                        const newY = snapToGrid(bounded.y);
 
                         if (
                           isColliding(
@@ -665,7 +807,8 @@ function EditorPageContent() {
                             newX,
                             newY,
                             newWidth,
-                            newHeight
+                            newHeight,
+                            rotation
                           )
                         ) {
                           node.width(item.width);
@@ -685,7 +828,7 @@ function EditorPageContent() {
                                   y: snapToGrid(newY),
                                   width: newWidth,
                                   height: newHeight,
-                                  rotation: node.rotation(),
+                                  rotation,
                                 }
                               : f
                           )
@@ -709,14 +852,6 @@ function EditorPageContent() {
                         padding={2}
                         boundBoxFunc={(oldBox, newBox) => {
                           if (newBox.width < 40 || newBox.height < 40) {
-                            return oldBox;
-                          }
-                          const isOutOfBounds =
-                            newBox.x < 0 ||
-                            newBox.y < 0 ||
-                            newBox.x + newBox.width > STAGE_WIDTH ||
-                            newBox.y + newBox.height > STAGE_HEIGHT;
-                          if (isOutOfBounds) {
                             return oldBox;
                           }
                           return newBox;
