@@ -282,15 +282,26 @@ export default function DashboardPage() {
           </button>
 
           {designs.map((design) => (
-            <button
+            <div
               key={design._id}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() =>
                 selectionMode
                   ? toggleDesignSelection(design._id)
                   : router.push(`/editor?designId=${design._id}`)
               }
-              className={`group aspect-square bg-white/80 border backdrop-blur-md rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-xl transition-all hover:-translate-y-1 p-5 flex flex-col justify-between text-left ${
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key !== "Enter" && e.key !== " ") return;
+                e.preventDefault();
+                if (selectionMode) {
+                  toggleDesignSelection(design._id);
+                } else {
+                  router.push(`/editor?designId=${design._id}`);
+                }
+              }}
+              className={`group aspect-square bg-white/80 border backdrop-blur-md rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-xl transition-all hover:-translate-y-1 p-5 flex flex-col justify-between text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-300 ${
                 selectedDesignIds.includes(design._id)
                   ? "border-red-300 ring-2 ring-red-200"
                   : "border-white/80"
@@ -384,7 +395,7 @@ export default function DashboardPage() {
                     : "-"}
                 </p>
               </div>
-            </button>
+            </div>
           ))}
 
           {designs.length === 0 && (

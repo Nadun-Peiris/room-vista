@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 
 type FurnitureLibraryItem = {
   id: string;
@@ -31,6 +30,7 @@ interface SidebarProps {
   renamingProject: boolean;
   furnitureLibrary: FurnitureLibraryItem[];
   addFurnitureToRoom: (item: FurnitureLibraryItem) => void;
+  onRequestExit: () => void;
 }
 
 export default function Sidebar({
@@ -51,6 +51,7 @@ export default function Sidebar({
   renamingProject,
   furnitureLibrary,
   addFurnitureToRoom,
+  onRequestExit,
 }: SidebarProps) {
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(projectName);
@@ -278,13 +279,14 @@ export default function Sidebar({
           </div>
           {/* BOTTOM ACTION AREA */}
           <div className="mt-auto pt-6 border-t border-gray-200/50">
-            <Link
-              href="/dashboard"
+            <button
+              type="button"
+              onClick={onRequestExit}
               className="flex items-center justify-center gap-2 w-full bg-white border border-gray-200 text-gray-700 hover:text-emerald-600 hover:border-emerald-200 font-bold p-3.5 rounded-xl transition-all shadow-sm active:scale-95"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
               Back to Dashboard
-            </Link>
+            </button>
           </div>
         </>
       ) : (
@@ -327,13 +329,14 @@ export default function Sidebar({
           </div>
 
           <div className="mt-auto pt-6 border-t border-gray-200/50">
-            <Link
-              href="/dashboard"
+            <button
+              type="button"
+              onClick={onRequestExit}
               className="flex items-center justify-center gap-2 w-full bg-white border border-gray-200 text-gray-700 hover:text-emerald-600 hover:border-emerald-200 font-bold p-3.5 rounded-xl transition-all shadow-sm active:scale-95"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
               Back to Dashboard
-            </Link>
+            </button>
           </div>
         </>
       )}

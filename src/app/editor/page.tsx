@@ -252,6 +252,9 @@ function EditorPageContent() {
   const [projectName, setProjectName] = useState(initialProjectName || "Untitled Design");
   const [showNamePopup, setShowNamePopup] = useState(!designId && !initialProjectName);
   const [newProjectNameInput, setNewProjectNameInput] = useState(initialProjectName);
+  const [showSaveSuccessPopup, setShowSaveSuccessPopup] = useState(false);
+  const [saveSuccessMessage, setSaveSuccessMessage] = useState("Design saved successfully!");
+  const [showExitConfirmPopup, setShowExitConfirmPopup] = useState(false);
   const [renamingProject, setRenamingProject] = useState(false);
   const shapeRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
@@ -416,7 +419,7 @@ function EditorPageContent() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selectedId]);
 
-  const handleSaveDesign = async () => {
+  const handleSaveDesign = async ({ showSuccessPopup = true }: { showSuccessPopup?: boolean } = {}) => {
     try {
       setSaving(true);
 
@@ -454,17 +457,42 @@ function EditorPageContent() {
 
       const data = await res.json();
       console.log("Saved design:", data);
+      setProjectName(data?.title?.trim() || projectName.trim() || "Untitled Design");
       if (!isUpdate && data?._id) {
         setCurrentDesignId(data._id);
         router.replace(`/editor?designId=${data._id}`);
       }
 
-      alert(isUpdate ? "Design updated successfully!" : "Design saved successfully!");
+      if (showSuccessPopup) {
+        setSaveSuccessMessage(
+          isUpdate ? "Design updated successfully!" : "Design saved successfully!"
+        );
+        setShowSaveSuccessPopup(true);
+      }
+      return true;
     } catch (error) {
       console.error("Save error:", error);
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleRequestExit = () => {
+    setShowExitConfirmPopup(true);
+  };
+
+  const handleExitWithoutSave = () => {
+    if (saving) return;
+    setShowExitConfirmPopup(false);
+    router.push("/dashboard");
+  };
+
+  const handleSaveAndExit = async () => {
+    const saved = await handleSaveDesign({ showSuccessPopup: false });
+    if (!saved) return;
+    setShowExitConfirmPopup(false);
+    router.push("/dashboard");
   };
 
   const handleConfirmProjectName = () => {
@@ -553,6 +581,7 @@ function EditorPageContent() {
         renamingProject={renamingProject}
         furnitureLibrary={FURNITURE_LIBRARY}
         addFurnitureToRoom={addFurnitureToRoom}
+        onRequestExit={handleRequestExit}
       />
 
       {/* CANVAS AREA */}
@@ -628,7 +657,9 @@ function EditorPageContent() {
               </button>
               <button
                 type="button"
-                onClick={handleSaveDesign}
+                onClick={() => {
+                  void handleSaveDesign();
+                }}
                 disabled={saving}
                 className="h-8 px-3 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
@@ -914,6 +945,61 @@ function EditorPageContent() {
                 className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100 disabled:opacity-50"
               >
                 Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSaveSuccessPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
+            <h3 className="text-lg font-extrabold text-gray-900">Project Saved</h3>
+            <p className="mt-2 text-sm text-gray-600">{saveSuccessMessage}</p>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowSaveSuccessPopup(false)}
+                className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showExitConfirmPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
+            <h3 className="text-lg font-extrabold text-gray-900">Leave Editor?</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Do you want to save this design before going back to the dashboard?
+            </p>
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setShowExitConfirmPopup(false)}
+                disabled={saving}
+                className="px-5 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-sm font-semibold whitespace-nowrap hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExitWithoutSave}
+                disabled={saving}
+                className="px-5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-semibold whitespace-nowrap hover:bg-gray-50 disabled:opacity-50"
+              >
+                Don&apos;t Save
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAndExit}
+                disabled={saving}
+                className="flex-1 min-w-[9.5rem] px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-sm font-semibold whitespace-nowrap hover:bg-emerald-100 disabled:opacity-50"
+              >
+                {saving ? "Saving..." : "Save and Exit"}
               </button>
             </div>
           </div>
