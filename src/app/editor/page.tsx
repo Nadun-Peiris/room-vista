@@ -565,9 +565,44 @@ function EditorPageContent() {
 
           {/* Canvas Header */}
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white/50 gap-4">
-            <span className="text-sm font-bold text-gray-400 tracking-widest uppercase whitespace-nowrap">
-              Workspace <span className="text-gray-600 ml-1">{roomWidthFeet}ft × {roomHeightFeet}ft</span>
-            </span>
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-sm font-bold text-gray-400 tracking-widest uppercase whitespace-nowrap">
+                Workspace <span className="text-gray-600 ml-1">{roomWidthFeet}ft × {roomHeightFeet}ft</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))))}
+                className="h-8 w-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold hover:border-emerald-300 hover:text-emerald-700 transition"
+                aria-label="Zoom out"
+              >
+                -
+              </button>
+              <span className="min-w-14 text-center text-xs font-bold text-gray-500">
+                {Math.round(clampedZoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setZoom((z) => Math.min(2.5, Number((z + 0.1).toFixed(2))))}
+                className="h-8 w-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold hover:border-emerald-300 hover:text-emerald-700 transition"
+                aria-label="Zoom in"
+              >
+                +
+              </button>
+              {clampedZoom !== 1 && (
+                <button
+                  type="button"
+                  onClick={() => setZoom(1)}
+                  className="inline-flex items-center justify-center p-1 text-gray-500 hover:text-emerald-700 transition-transform duration-200 hover:scale-110 hover:-rotate-12"
+                  aria-label="Reset zoom"
+                  title="Reset zoom"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M4 4v6h6M20 20v-6h-6" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M20 9A8 8 0 006.34 5.34L4 7m16 10l-2.34 1.66A8 8 0 013.99 15" />
+                  </svg>
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -590,32 +625,6 @@ function EditorPageContent() {
                     Switch to 2D
                   </>
                 )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setZoom((z) => Math.max(0.3, Number((z - 0.1).toFixed(2))))}
-                className="h-8 w-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold hover:border-emerald-300 hover:text-emerald-700 transition"
-                aria-label="Zoom out"
-              >
-                -
-              </button>
-              <span className="min-w-14 text-center text-xs font-bold text-gray-500">
-                {Math.round(clampedZoom * 100)}%
-              </span>
-              <button
-                type="button"
-                onClick={() => setZoom((z) => Math.min(2.5, Number((z + 0.1).toFixed(2))))}
-                className="h-8 w-8 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold hover:border-emerald-300 hover:text-emerald-700 transition"
-                aria-label="Zoom in"
-              >
-                +
-              </button>
-              <button
-                type="button"
-                onClick={() => setZoom(1)}
-                className="h-8 px-3 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:border-emerald-300 hover:text-emerald-700 transition"
-              >
-                Reset
               </button>
               <button
                 type="button"
