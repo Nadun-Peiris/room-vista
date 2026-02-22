@@ -1,7 +1,7 @@
 "use client";
 
 import { Stage, Layer, Rect, Line, Transformer } from "react-konva";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { Suspense, useState, useRef, useEffect, useMemo } from "react";
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -77,7 +77,7 @@ const FURNITURE_LIBRARY: FurnitureLibraryItem[] = [
   },
 ];
 
-export default function EditorPage() {
+function EditorPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const designId = searchParams.get("designId");
@@ -682,5 +682,13 @@ export default function EditorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function EditorPage() {
+  return (
+    <Suspense fallback={<div className="h-screen bg-gray-50" />}>
+      <EditorPageContent />
+    </Suspense>
   );
 }
