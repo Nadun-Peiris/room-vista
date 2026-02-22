@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 
 type FurnitureLibraryItem = {
@@ -25,6 +26,9 @@ interface SidebarProps {
   setFloorColor: (value: string) => void;
   lightIntensity: number;
   setLightIntensity: (value: number) => void;
+  projectName: string;
+  onSaveProjectName: (name: string) => void | Promise<void>;
+  renamingProject: boolean;
   furnitureLibrary: FurnitureLibraryItem[];
   addFurnitureToRoom: (item: FurnitureLibraryItem) => void;
   viewMode: "2d" | "3d";
@@ -44,11 +48,17 @@ export default function Sidebar({
   setFloorColor,
   lightIntensity,
   setLightIntensity,
+  projectName,
+  onSaveProjectName,
+  renamingProject,
   furnitureLibrary,
   addFurnitureToRoom,
   viewMode,
   setViewMode,
 }: SidebarProps) {
+  const [editingProjectName, setEditingProjectName] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState(projectName);
+
   return (
     <div className="relative z-10 w-80 bg-white/70 backdrop-blur-md border-r border-white/50 p-6 md:p-8 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] h-screen">
 
@@ -62,6 +72,63 @@ export default function Sidebar({
         <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">
           Room Vista
         </h2>
+      </div>
+
+      <div className="group mb-5 p-3 bg-white/70 border border-white/80 rounded-2xl shadow-sm">
+        {!editingProjectName ? (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-extrabold text-gray-900 truncate">
+              {projectName || "Untitled Design"}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setProjectNameDraft(projectName);
+                setEditingProjectName(true);
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-gray-100"
+              aria-label="Edit project name"
+            >
+              <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16.5 3.5l4 4L8 20H4v-4L16.5 3.5zM14 6l4 4" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={projectNameDraft}
+              onChange={(e) => setProjectNameDraft(e.target.value)}
+              className="w-full p-2 rounded-lg bg-white border border-gray-200 text-gray-900 text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!projectNameDraft.trim()) return;
+                  await onSaveProjectName(projectNameDraft);
+                  setEditingProjectName(false);
+                }}
+                disabled={renamingProject || !projectNameDraft.trim()}
+                className="px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 disabled:opacity-50"
+              >
+                {renamingProject ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectNameDraft(projectName);
+                  setEditingProjectName(false);
+                }}
+                disabled={renamingProject}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 text-xs font-bold hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 space-y-5 overflow-y-auto pr-2 pb-4 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">

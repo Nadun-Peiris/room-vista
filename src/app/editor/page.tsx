@@ -28,6 +28,7 @@ type FurnitureItem = {
 
 type LoadedDesign = {
   _id: string;
+  title?: string;
   roomWidthFeet: number;
   roomHeightFeet: number;
   furniture: FurnitureItem[];
@@ -81,6 +82,7 @@ function EditorPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const designId = searchParams.get("designId");
+  const initialProjectName = searchParams.get("projectName")?.trim() || "";
 
   const addFurnitureToRoom = (item: FurnitureLibraryItem) => {
     const widthPx = item.widthInches * PIXELS_PER_INCH;
@@ -162,6 +164,10 @@ function EditorPageContent() {
   const [zoom, setZoom] = useState(1);
   const [saving, setSaving] = useState(false);
   const [currentDesignId, setCurrentDesignId] = useState<string | null>(designId);
+  const [projectName, setProjectName] = useState(initialProjectName || "Untitled Design");
+  const [showNamePopup, setShowNamePopup] = useState(!designId && !initialProjectName);
+  const [newProjectNameInput, setNewProjectNameInput] = useState(initialProjectName);
+  const [renamingProject, setRenamingProject] = useState(false);
   const shapeRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
 
@@ -211,6 +217,9 @@ function EditorPageContent() {
 
   useEffect(() => {
     setCurrentDesignId(designId);
+    if (designId) {
+      setShowNamePopup(false);
+    }
   }, [designId]);
 
   useEffect(() => {
@@ -236,6 +245,7 @@ function EditorPageContent() {
         const data: LoadedDesign = await res.json();
         setRoomWidthFeet(data.roomWidthFeet);
         setRoomHeightFeet(data.roomHeightFeet);
+        setProjectName(data.title?.trim() || "Untitled Design");
         setFurniture(data.furniture ?? []);
         setRoomShape(data.roomShape || "rectangle");
         setWallColor(data.wallColor || "#e2e8f0");
@@ -305,7 +315,7 @@ function EditorPageContent() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          title: "My Design",
+          title: projectName.trim() || "Untitled Design",
           roomWidthFeet,
           roomHeightFeet,
           roomShape,
@@ -333,6 +343,52 @@ function EditorPageContent() {
       console.error("Save error:", error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleConfirmProjectName = () => {
+    const nextName = newProjectNameInput.trim();
+    if (!nextName) return;
+    setProjectName(nextName);
+    setShowNamePopup(false);
+  };
+
+  const handleProjectNameSave = async (nextName: string) => {
+    const normalizedName = nextName.trim();
+    if (!normalizedName) return;
+
+    if (!currentDesignId) {
+      setProjectName(normalizedName);
+      return;
+    }
+
+    try {
+      setRenamingProject(true);
+      const user = await import("@/lib/firebase").then((m) => m.auth.currentUser);
+      if (!user) return;
+
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/designs/${currentDesignId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: normalizedName }),
+      });
+
+      if (!res.ok) {
+        alert("Failed to update project name.");
+        return;
+      }
+
+      const data = await res.json();
+      setProjectName(data?.title?.trim() || normalizedName);
+    } catch (error) {
+      console.error("Rename project error:", error);
+      alert("Failed to update project name.");
+    } finally {
+      setRenamingProject(false);
     }
   };
 
@@ -371,6 +427,9 @@ function EditorPageContent() {
         setFloorColor={setFloorColor}
         lightIntensity={lightIntensity}
         setLightIntensity={setLightIntensity}
+        projectName={projectName}
+        onSaveProjectName={handleProjectNameSave}
+        renamingProject={renamingProject}
         furnitureLibrary={FURNITURE_LIBRARY}
         addFurnitureToRoom={addFurnitureToRoom}
         viewMode={viewMode}
@@ -681,6 +740,41 @@ function EditorPageContent() {
 
         </div>
       </div>
+
+      {showNamePopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
+            <h3 className="text-lg font-extrabold text-gray-900">Name Your Project</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Enter a name before you start designing.
+            </p>
+            <input
+              type="text"
+              value={newProjectNameInput}
+              onChange={(e) => setNewProjectNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleConfirmProjectName();
+                }
+              }}
+              className="mt-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500"
+              placeholder="My Living Room Concept"
+              autoFocus
+            />
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={handleConfirmProjectName}
+                disabled={!newProjectNameInput.trim()}
+                className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100 disabled:opacity-50"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

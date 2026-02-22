@@ -24,6 +24,11 @@ export default function DashboardPage() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedDesignIds, setSelectedDesignIds] = useState<string[]>([]);
   const [showDeletePopup, setShowDeletePopup] = useState(false);
+  const [showNewDesignPopup, setShowNewDesignPopup] = useState(false);
+  const [newDesignName, setNewDesignName] = useState("");
+  const [editingDesignId, setEditingDesignId] = useState<string | null>(null);
+  const [editingDesignTitle, setEditingDesignTitle] = useState("");
+  const [renamingDesign, setRenamingDesign] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -134,6 +139,59 @@ export default function DashboardPage() {
     }
   };
 
+  const handleStartNewDesign = () => {
+    const name = newDesignName.trim();
+    if (!name) return;
+    router.push(`/editor?projectName=${encodeURIComponent(name)}`);
+    setNewDesignName("");
+    setShowNewDesignPopup(false);
+  };
+
+  const handleRenameDesign = async (designId: string) => {
+    const normalizedTitle = editingDesignTitle.trim();
+    if (!normalizedTitle) return;
+
+    try {
+      setRenamingDesign(true);
+      const user = auth.currentUser;
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/designs/${designId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: normalizedTitle }),
+      });
+
+      if (!res.ok) {
+        alert("Failed to rename design.");
+        return;
+      }
+
+      const data = await res.json();
+      setDesigns((prev) =>
+        prev.map((design) =>
+          design._id === designId
+            ? { ...design, title: data?.title?.trim() || normalizedTitle }
+            : design
+        )
+      );
+      setEditingDesignId(null);
+      setEditingDesignTitle("");
+    } catch (error) {
+      console.error("Rename design error:", error);
+      alert("Failed to rename design.");
+    } finally {
+      setRenamingDesign(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
@@ -212,7 +270,7 @@ export default function DashboardPage() {
 
           {/* NEW DESIGN TILE */}
           <button
-            onClick={() => router.push("/editor")}
+            onClick={() => setShowNewDesignPopup(true)}
             className="group aspect-square flex flex-col items-center justify-center gap-3 border-2 border-dashed border-gray-300 rounded-[2rem] bg-white/30 hover:bg-emerald-50 hover:border-emerald-400 hover:shadow-lg hover:shadow-emerald-500/10 transition-all cursor-pointer backdrop-blur-sm"
           >
             <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-emerald-100 flex items-center justify-center transition-colors">
@@ -232,7 +290,7 @@ export default function DashboardPage() {
                   ? toggleDesignSelection(design._id)
                   : router.push(`/editor?designId=${design._id}`)
               }
-              className={`aspect-square bg-white/80 border backdrop-blur-md rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-xl transition-all hover:-translate-y-1 p-5 flex flex-col justify-between text-left ${
+              className={`group aspect-square bg-white/80 border backdrop-blur-md rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-xl transition-all hover:-translate-y-1 p-5 flex flex-col justify-between text-left ${
                 selectedDesignIds.includes(design._id)
                   ? "border-red-300 ring-2 ring-red-200"
                   : "border-white/80"
@@ -242,6 +300,22 @@ export default function DashboardPage() {
                 <div className="inline-flex items-center w-fit gap-2 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold uppercase tracking-wider">
                   Saved Design
                 </div>
+                {!selectionMode && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingDesignId(design._id);
+                      setEditingDesignTitle(design.title?.trim() || "Untitled Design");
+                    }}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-gray-100"
+                    aria-label="Edit design name"
+                  >
+                    <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16.5 3.5l4 4L8 20H4v-4L16.5 3.5zM14 6l4 4" />
+                    </svg>
+                  </button>
+                )}
                 {selectionMode && (
                   <span
                     className={`h-5 w-5 rounded-full border-2 ${
@@ -254,9 +328,49 @@ export default function DashboardPage() {
               </div>
 
               <div className="space-y-2">
-                <h3 className="text-lg font-extrabold text-gray-900 leading-tight line-clamp-2">
-                  {design.title?.trim() || "Untitled Design"}
-                </h3>
+                {editingDesignId === design._id ? (
+                  <div
+                    className="space-y-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="text"
+                      value={editingDesignTitle}
+                      onChange={(e) => setEditingDesignTitle(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-2.5 py-2 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500"
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRenameDesign(design._id);
+                        }}
+                        disabled={renamingDesign || !editingDesignTitle.trim()}
+                        className="px-2.5 py-1 rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        {renamingDesign ? "Saving..." : "Save"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingDesignId(null);
+                          setEditingDesignTitle("");
+                        }}
+                        disabled={renamingDesign}
+                        className="px-2.5 py-1 rounded-md border border-gray-200 bg-white text-gray-700 text-xs font-bold hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <h3 className="text-lg font-extrabold text-gray-900 leading-tight line-clamp-2">
+                    {design.title?.trim() || "Untitled Design"}
+                  </h3>
+                )}
                 <p className="text-sm font-semibold text-gray-500">
                   {design.roomWidthFeet ?? "-"}ft x {design.roomHeightFeet ?? "-"}ft
                 </p>
@@ -308,6 +422,53 @@ export default function DashboardPage() {
                   className="px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 font-semibold hover:bg-red-100 disabled:opacity-50"
                 >
                   {deleting ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showNewDesignPopup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
+              <h3 className="text-lg font-extrabold text-gray-900">
+                Name Your New Project
+              </h3>
+              <p className="mt-2 text-sm text-gray-600">
+                Enter a project name to start.
+              </p>
+              <input
+                type="text"
+                value={newDesignName}
+                onChange={(e) => setNewDesignName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleStartNewDesign();
+                  }
+                }}
+                className="mt-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-900 focus:outline-none focus:ring-4 focus:ring-emerald-100 focus:border-emerald-500"
+                placeholder="My New Design"
+                autoFocus
+              />
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewDesignPopup(false);
+                    setNewDesignName("");
+                  }}
+                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStartNewDesign}
+                  disabled={!newDesignName.trim()}
+                  className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  Continue
                 </button>
               </div>
             </div>
