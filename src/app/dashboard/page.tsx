@@ -223,12 +223,20 @@ export default function DashboardPage() {
 
             {/* USERS BUTTON (Superadmin only) */}
             {role === "superadmin" && (
-              <button
-                onClick={() => router.push("/users")}
-                className="bg-white/80 border border-gray-200 text-gray-700 px-6 py-2.5 rounded-full font-bold text-sm shadow-sm hover:shadow-md hover:text-emerald-600 hover:border-emerald-200 transition-all backdrop-blur-md active:scale-95"
-              >
-                Users
-              </button>
+              <>
+                <button
+                  onClick={() => router.push("/users")}
+                  className="bg-white/80 border border-gray-200 text-gray-700 px-6 py-2.5 rounded-full font-bold text-sm shadow-sm hover:shadow-md hover:text-emerald-600 hover:border-emerald-200 transition-all backdrop-blur-md active:scale-95"
+                >
+                  Users
+                </button>
+                <button
+                  onClick={() => router.push("/furniture")}
+                  className="bg-white/80 border border-gray-200 text-gray-700 px-6 py-2.5 rounded-full font-bold text-sm shadow-sm hover:shadow-md hover:text-emerald-600 hover:border-emerald-200 transition-all backdrop-blur-md active:scale-95"
+                >
+                  Furniture
+                </button>
+              </>
             )}
           </div>
 

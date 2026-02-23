@@ -48,6 +48,7 @@ type FurnitureLibraryItem = {
   depthInches: number;
   heightFeet: number;
   defaultColor: string;
+  thumbnailUrl?: string;
 };
 
 const serializeDesignSnapshot = ({
@@ -112,6 +113,17 @@ const FURNITURE_LIBRARY: FurnitureLibraryItem[] = [
     defaultColor: "#f59e0b",
   },
 ];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  seating: "#059669",
+  sofa: "#059669",
+  beds: "#3b82f6",
+  bed: "#3b82f6",
+  tables: "#f59e0b",
+  table: "#f59e0b",
+  storage: "#0ea5e9",
+  decor: "#8b5cf6",
+};
 
 type Point = { x: number; y: number };
 
@@ -278,6 +290,7 @@ function EditorPageContent() {
 
   /* ---------------- FURNITURE STATE ---------------- */
   const [furniture, setFurniture] = useState<FurnitureItem[]>([]);
+  const [furnitureLibrary, setFurnitureLibrary] = useState<FurnitureLibraryItem[]>(FURNITURE_LIBRARY);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
@@ -469,6 +482,66 @@ function EditorPageContent() {
 
     loadDesign();
   }, [designId]);
+
+  useEffect(() => {
+    let isMounted = true;
+    let unsubscribe: (() => void) | undefined;
+
+    const initFurnitureLibrary = async () => {
+      try {
+        const firebase = await import("@/lib/firebase");
+        const authModule = await import("firebase/auth");
+
+        const loadFurnitureForUser = async (user: { getIdToken: () => Promise<string> } | null) => {
+          if (!user || !isMounted) return;
+
+          const token = await user.getIdToken();
+          const res = await fetch("/api/furniture", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          if (!res.ok || !isMounted) {
+            return;
+          }
+
+          const data = await res.json();
+          if (!Array.isArray(data) || !isMounted) return;
+
+          const mapped: FurnitureLibraryItem[] = data.map((item: any) => {
+            const category = (item.category || "decor").toString().toLowerCase();
+            return {
+              id: item._id,
+              name: item.name || "Untitled Furniture",
+              category,
+              widthInches: Number(item.widthInches) || 0,
+              depthInches: Number(item.depthInches) || 0,
+              heightFeet: Number(item.heightFeet) || 0,
+              defaultColor: CATEGORY_COLORS[category] || "#64748b",
+              thumbnailUrl: item.thumbnailUrl,
+            };
+          });
+
+          if (mapped.length > 0) {
+            setFurnitureLibrary(mapped);
+          }
+        };
+
+        await loadFurnitureForUser(firebase.auth.currentUser);
+        unsubscribe = authModule.onAuthStateChanged(firebase.auth, loadFurnitureForUser);
+      } catch (error) {
+        console.error("Load furniture library error:", error);
+      }
+    };
+
+    initFurnitureLibrary();
+
+    return () => {
+      isMounted = false;
+      unsubscribe?.();
+    };
+  }, []);
 
   const checkDeselect = (e: KonvaEventObject<PointerEvent>) => {
     const clickedOnEmpty = e.target === e.target.getStage();
@@ -726,7 +799,7 @@ function EditorPageContent() {
         projectName={projectName}
         onSaveProjectName={handleProjectNameSave}
         renamingProject={renamingProject}
-        furnitureLibrary={FURNITURE_LIBRARY}
+        furnitureLibrary={furnitureLibrary}
         addFurnitureToRoom={addFurnitureToRoom}
         onRequestExit={handleRequestExit}
       />

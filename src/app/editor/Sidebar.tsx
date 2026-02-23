@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type FurnitureLibraryItem = {
   id: string;
@@ -10,6 +10,7 @@ type FurnitureLibraryItem = {
   depthInches: number;
   heightFeet: number;
   defaultColor: string;
+  thumbnailUrl?: string;
 };
 
 interface SidebarProps {
@@ -60,6 +61,7 @@ export default function Sidebar({
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(projectName);
   const [activePanel, setActivePanel] = useState<"main" | "furniture">("main");
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
   const furnitureCardImages: Record<string, string> = {
     "sofa-3-seater":
@@ -68,6 +70,29 @@ export default function Sidebar({
       "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=600&q=80",
     "coffee-table":
       "https://images.unsplash.com/photo-1493666438817-866a91353ca9?auto=format&fit=crop&w=600&q=80",
+  };
+
+  const groupedFurniture = useMemo(() => {
+    return furnitureLibrary.reduce<Record<string, FurnitureLibraryItem[]>>((acc, item) => {
+      const category = item.category?.trim() || "uncategorized";
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(item);
+      return acc;
+    }, {});
+  }, [furnitureLibrary]);
+
+  const categoryList = useMemo(
+    () => Object.keys(groupedFurniture).sort((a, b) => a.localeCompare(b)),
+    [groupedFurniture]
+  );
+
+  const toggleCategory = (category: string) => {
+    setExpandedCategories((prev) => ({
+      ...prev,
+      [category]: !(prev[category] ?? true),
+    }));
   };
 
   return (
@@ -333,25 +358,64 @@ export default function Sidebar({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-2 pb-3 space-y-4 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
-            {furnitureLibrary.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => addFurnitureToRoom(item)}
-                className="w-full text-left p-3.5 bg-white/70 border border-white/80 rounded-2xl shadow-sm hover:shadow-md hover:bg-white transition"
-              >
-                <div
-                  className="w-full h-28 rounded-xl mb-3 bg-cover bg-center shadow-sm"
-                  style={{
-                    backgroundImage: `url(${furnitureCardImages[item.id] || "https://images.unsplash.com/photo-1567016432779-094069958ea5?auto=format&fit=crop&w=600&q=80"})`,
-                  }}
-                  aria-hidden="true"
-                />
-                <p className="text-sm font-extrabold text-gray-900">{item.name}</p>
-                <p className="text-xs font-semibold text-gray-500 capitalize">{item.category}</p>
-              </button>
-            ))}
+          <div className="flex-1 overflow-y-auto pr-2 pb-3 space-y-3 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+            {categoryList.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-white/60 border border-white/80 text-sm font-semibold text-gray-500">
+                No furniture items available.
+              </div>
+            ) : (
+              categoryList.map((category) => {
+                const isOpen = expandedCategories[category] ?? true;
+                const items = groupedFurniture[category];
+
+                return (
+                  <div key={category} className="bg-white/70 border border-white/80 rounded-2xl shadow-sm overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => toggleCategory(category)}
+                      className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/70 transition-colors"
+                    >
+                      <span className="text-sm font-extrabold text-gray-900 capitalize">
+                        {category} ({items.length})
+                      </span>
+                      <svg
+                        className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+
+                    {isOpen && (
+                      <div className="px-3 pb-3 space-y-2">
+                        {items.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => addFurnitureToRoom(item)}
+                            className="w-full text-left p-3 bg-white border border-gray-100 rounded-xl shadow-sm hover:shadow-md hover:bg-gray-50 transition"
+                          >
+                            <div
+                              className="w-full h-24 rounded-lg mb-2 bg-cover bg-center shadow-sm"
+                              style={{
+                                backgroundImage: `url(${item.thumbnailUrl || furnitureCardImages[item.id] || "https://images.unsplash.com/photo-1567016432779-094069958ea5?auto=format&fit=crop&w=600&q=80"})`,
+                              }}
+                              aria-hidden="true"
+                            />
+                            <p className="text-sm font-extrabold text-gray-900">{item.name}</p>
+                            <p className="text-xs font-semibold text-gray-500 capitalize">
+                              {item.widthInches}" × {item.depthInches}"
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
 
           <div className="mt-auto pt-6 border-t border-gray-200/50">
