@@ -3,12 +3,16 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, ContactShadows } from "@react-three/drei";
-import { Box3, Color, Vector3, type Mesh, type Object3D } from "three";
+import { Box3, Color, Vector3, type Material, type Mesh, type Object3D } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
 const ORIENTATION_STEPS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+type ColorableMaterial = Material & { color: Color };
+
+const isColorableMaterial = (material: Material): material is ColorableMaterial =>
+  "color" in material && material.color instanceof Color;
 
 interface ThreeDProps {
   roomWidthFeet: number;
@@ -260,16 +264,16 @@ function FurnitureAsset({
       // Ensure per-instance color edits don't mutate shared GLTF materials.
       if (Array.isArray(mesh.material)) {
         mesh.material = mesh.material.map((mat) => {
-          const next = mat.clone();
-          if ("color" in next && next.color) {
+          const next = (mat as Material).clone();
+          if (isColorableMaterial(next)) {
             next.color = next.color.clone();
             next.color.lerp(tintColor, 0.85);
           }
           return next;
         });
       } else if (mesh.material) {
-        const next = mesh.material.clone();
-        if ("color" in next && next.color) {
+        const next = (mesh.material as Material).clone();
+        if (isColorableMaterial(next)) {
           next.color = next.color.clone();
           next.color.lerp(tintColor, 0.85);
         }
