@@ -1,6 +1,6 @@
 "use client";
 
-import { Stage, Layer, Rect, Line, Transformer } from "react-konva";
+import { Stage, Layer, Rect, Line, Transformer, Text } from "react-konva";
 import { Suspense, useState, useRef, useEffect, useMemo, useCallback } from "react";
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
@@ -352,6 +352,7 @@ function EditorPageContent() {
   const [showExitConfirmPopup, setShowExitConfirmPopup] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
   const [renamingProject, setRenamingProject] = useState(false);
+  const [liveRotation, setLiveRotation] = useState<{ id: string; angle: number } | null>(null);
   const shapeRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
 
@@ -608,6 +609,7 @@ function EditorPageContent() {
     if (!selectedId) return;
     setFurniture((prev) => prev.filter((item) => item.id !== selectedId));
     setSelectedId(null);
+    setLiveRotation(null);
   };
 
   const selectedFurniture = useMemo(
@@ -641,6 +643,7 @@ function EditorPageContent() {
       e.preventDefault();
       setFurniture((prev) => prev.filter((item) => item.id !== selectedId));
       setSelectedId(null);
+      setLiveRotation(null);
     };
 
     window.addEventListener("keydown", onKeyDown);
@@ -1185,6 +1188,14 @@ function EditorPageContent() {
                           e.cancelBubble = true;
                           setSelectedId(item.id);
                         }}
+                        onTransformStart={(e) => {
+                          const node = e.target as Konva.Rect;
+                          setLiveRotation({ id: item.id, angle: node.rotation() });
+                        }}
+                        onTransform={(e) => {
+                          const node = e.target as Konva.Rect;
+                          setLiveRotation({ id: item.id, angle: node.rotation() });
+                        }}
 
                         onDragEnd={(e) => {
                           const node = e.target;
@@ -1280,9 +1291,39 @@ function EditorPageContent() {
                                 : f
                             )
                           );
+                          setLiveRotation(null);
                         }}
                       />
                     ))}
+
+                    {selectedFurniture && (
+                      <>
+                        <Rect
+                          x={selectedFurniture.x + selectedFurniture.width / 2 - 26}
+                          y={Math.max(8, selectedFurniture.y - 26)}
+                          width={52}
+                          height={20}
+                          fill="rgba(17,24,39,0.85)"
+                          cornerRadius={8}
+                          listening={false}
+                        />
+                        <Text
+                          x={selectedFurniture.x + selectedFurniture.width / 2 - 26}
+                          y={Math.max(8, selectedFurniture.y - 22)}
+                          width={52}
+                          align="center"
+                          text={`${Math.round(
+                            liveRotation?.id === selectedFurniture.id
+                              ? liveRotation.angle
+                              : selectedFurniture.rotation
+                          )}°`}
+                          fontSize={12}
+                          fontStyle="bold"
+                          fill="#f8fafc"
+                          listening={false}
+                        />
+                      </>
+                    )}
 
                     {/* CUSTOMIZED TRANSFORMER */}
                       {selectedId && (
