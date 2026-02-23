@@ -24,6 +24,11 @@ const normalizeLightIntensity = (value: unknown) => {
   return Math.min(2, Math.max(0.2, value));
 };
 
+const normalizeDimension = (value: unknown, fallback: number) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
+  return value;
+};
+
 export async function POST(req: NextRequest) {
   try {
     await connectDB();
@@ -54,6 +59,8 @@ export async function POST(req: NextRequest) {
       title,
       roomWidthFeet,
       roomHeightFeet,
+      roomLengthFeet,
+      wallHeightFeet,
       roomShape,
       wallColor,
       floorColor,
@@ -61,11 +68,17 @@ export async function POST(req: NextRequest) {
       furniture,
     } = body;
 
+    const normalizedRoomWidth = normalizeDimension(roomWidthFeet, 12);
+    const normalizedRoomLength = normalizeDimension(roomLengthFeet, normalizeDimension(roomHeightFeet, 10));
+    const normalizedWallHeight = normalizeDimension(wallHeightFeet, 9);
+
     const design = await Design.create({
       userId: user._id,
       title,
-      roomWidthFeet,
-      roomHeightFeet,
+      roomWidthFeet: normalizedRoomWidth,
+      roomHeightFeet: normalizedRoomLength,
+      roomLengthFeet: normalizedRoomLength,
+      wallHeightFeet: normalizedWallHeight,
       roomShape: normalizeRoomShape(roomShape),
       wallColor: normalizeColor(wallColor, DEFAULT_WALL_COLOR),
       floorColor: normalizeColor(floorColor, DEFAULT_FLOOR_COLOR),

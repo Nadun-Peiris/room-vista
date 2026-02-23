@@ -8,8 +8,9 @@ import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 
 interface ThreeDProps {
   roomWidthFeet: number;
-  roomHeightFeet: number;
-  furniture: any[];
+  roomLengthFeet: number;
+  wallHeightFeet: number;
+  furniture: FurnitureItem3D[];
   wallColor: string;
   floorColor: string;
   lightIntensity: number;
@@ -28,7 +29,8 @@ interface FurnitureItem3D {
 
 export default function ThreeDView({
   roomWidthFeet,
-  roomHeightFeet,
+  roomLengthFeet,
+  wallHeightFeet,
   furniture,
   wallColor,
   floorColor,
@@ -36,9 +38,10 @@ export default function ThreeDView({
   zoom = 1,
 }: ThreeDProps) {
   const roomWidth = roomWidthFeet;
-  const roomHeight = roomHeightFeet;
+  const roomLength = roomLengthFeet;
+  const roomBaseY = -wallHeightFeet / 2;
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
-  const baseDistance = Math.max(roomWidth, roomHeight) * 2;
+  const baseDistance = Math.max(roomWidth, roomLength) * 2;
 
   return (
     <div className="w-full h-full bg-gray-50/50">
@@ -67,8 +70,8 @@ export default function ThreeDView({
 
         {/* 3D ARCHITECTURAL GRID (Matches your 1-foot 2D grid) */}
         <Grid 
-          position={[0, 0.01, 0]} 
-          args={[roomWidth, roomHeight]} 
+          position={[0, roomBaseY + 0.01, 0]} 
+          args={[roomWidth, roomLength]} 
           sectionSize={1} 
           cellSize={1} 
           cellColor="#cbd5e1" 
@@ -78,20 +81,20 @@ export default function ThreeDView({
         />
 
         {/* FLOOR */}
-        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-          <planeGeometry args={[roomWidth, roomHeight]} />
+        <mesh position={[0, roomBaseY, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+          <planeGeometry args={[roomWidth, roomLength]} />
           <meshStandardMaterial color={floorColor} />
         </mesh>
 
         {/* WALLS - Styled as frosted glass for a premium look */}
-        <POVWalls roomWidth={roomWidth} roomHeight={roomHeight} wallColor={wallColor} />
+        <POVWalls roomWidth={roomWidth} roomLength={roomLength} wallHeight={wallHeightFeet} wallColor={wallColor} />
 
         {/* FURNITURE */}
         {furniture.map((item) => {
           // Math correction: 2D maps from top-left, 3D maps from center.
           // We divide by 60 because your 2D grid uses 60 pixels per foot.
           const xPos = (item.x + item.width / 2) / 60 - roomWidth / 2;
-          const zPos = (item.y + item.height / 2) / 60 - roomHeight / 2;
+          const zPos = (item.y + item.height / 2) / 60 - roomLength / 2;
           const widthFeet = item.width / 60;
           const depthFeet = item.height / 60;
           
@@ -100,7 +103,7 @@ export default function ThreeDView({
               key={item.id}
               position={[
                 xPos,
-                (item.heightFeet || 1) / 2,
+                roomBaseY + (item.heightFeet || 1) / 2,
                 zPos
               ]}
               rotation={[0, -item.rotation * Math.PI / 180, 0]}
@@ -117,7 +120,7 @@ export default function ThreeDView({
         })}
 
         {/* Soft contact shadows underneath furniture */}
-        <ContactShadows position={[0, 0.02, 0]} opacity={0.4} scale={30} blur={2} far={4} />
+        <ContactShadows position={[0, roomBaseY + 0.02, 0]} opacity={0.4} scale={30} blur={2} far={4} />
       </Canvas>
     </div>
   );
@@ -148,11 +151,13 @@ function CameraZoomSync({
 
 function POVWalls({
   roomWidth,
-  roomHeight,
+  roomLength,
+  wallHeight,
   wallColor,
 }: {
   roomWidth: number;
-  roomHeight: number;
+  roomLength: number;
+  wallHeight: number;
   wallColor: string;
 }) {
   const frontWallRef = useRef<Mesh>(null);
@@ -179,23 +184,23 @@ function POVWalls({
 
   return (
     <group>
-      <mesh ref={backWallRef} position={[0, 1.5, -roomHeight / 2]} receiveShadow>
-        <boxGeometry args={[roomWidth, 3, 0.2]} />
+      <mesh ref={backWallRef} position={[0, 0, -roomLength / 2]} receiveShadow>
+        <boxGeometry args={[roomWidth, wallHeight, 0.2]} />
         <meshStandardMaterial color={wallColor} />
       </mesh>
 
-      <mesh ref={frontWallRef} position={[0, 1.5, roomHeight / 2]} receiveShadow>
-        <boxGeometry args={[roomWidth, 3, 0.2]} />
+      <mesh ref={frontWallRef} position={[0, 0, roomLength / 2]} receiveShadow>
+        <boxGeometry args={[roomWidth, wallHeight, 0.2]} />
         <meshStandardMaterial color={wallColor} />
       </mesh>
 
-      <mesh ref={leftWallRef} position={[-roomWidth / 2, 1.5, 0]} receiveShadow>
-        <boxGeometry args={[0.2, 3, roomHeight]} />
+      <mesh ref={leftWallRef} position={[-roomWidth / 2, 0, 0]} receiveShadow>
+        <boxGeometry args={[0.2, wallHeight, roomLength]} />
         <meshStandardMaterial color={wallColor} />
       </mesh>
 
-      <mesh ref={rightWallRef} position={[roomWidth / 2, 1.5, 0]} receiveShadow>
-        <boxGeometry args={[0.2, 3, roomHeight]} />
+      <mesh ref={rightWallRef} position={[roomWidth / 2, 0, 0]} receiveShadow>
+        <boxGeometry args={[0.2, wallHeight, roomLength]} />
         <meshStandardMaterial color={wallColor} />
       </mesh>
     </group>

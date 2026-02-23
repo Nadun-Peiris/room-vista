@@ -14,9 +14,11 @@ type FurnitureLibraryItem = {
 
 interface SidebarProps {
   roomWidthFeet: number;
-  roomHeightFeet: number;
+  roomLengthFeet: number;
+  wallHeightFeet: number;
   setRoomWidthFeet: (value: number) => void;
-  setRoomHeightFeet: (value: number) => void;
+  setRoomLengthFeet: (value: number) => void;
+  setWallHeightFeet: (value: number) => void;
   roomShape: string;
   setRoomShape: (value: string) => void;
   wallColor: string;
@@ -35,9 +37,11 @@ interface SidebarProps {
 
 export default function Sidebar({
   roomWidthFeet,
-  roomHeightFeet,
+  roomLengthFeet,
+  wallHeightFeet,
   setRoomWidthFeet,
-  setRoomHeightFeet,
+  setRoomLengthFeet,
+  setWallHeightFeet,
   roomShape,
   setRoomShape,
   wallColor,
@@ -145,7 +149,7 @@ export default function Sidebar({
         <div className="p-5 bg-white/60 border border-white/80 rounded-2xl shadow-sm space-y-4">
           <h3 className="text-xs font-bold text-gray-900 uppercase tracking-widest flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            Canvas Size (Feet)
+            Room Size (Feet)
           </h3>
 
           <div className="flex gap-3">
@@ -164,12 +168,12 @@ export default function Sidebar({
             </div>
 
             <div className="flex flex-col gap-1 w-full">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Height</label>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Length</label>
               <div className="relative">
                 <input
                   type="number"
-                  value={roomHeightFeet}
-                  onChange={(e) => setRoomHeightFeet(Number(e.target.value) || 0)}
+                  value={roomLengthFeet}
+                  onChange={(e) => setRoomLengthFeet(Number(e.target.value) || 0)}
                   className="w-full p-2.5 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm font-semibold pr-8"
                   placeholder="10"
                 />
@@ -177,7 +181,31 @@ export default function Sidebar({
               </div>
             </div>
           </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Wall Height</label>
+            <div className="relative">
+              <input
+                type="number"
+                value={wallHeightFeet}
+                onChange={(e) => setWallHeightFeet(Number(e.target.value) || 0)}
+                className="w-full p-2.5 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm font-semibold pr-8"
+                placeholder="9"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 pointer-events-none">ft</span>
+            </div>
+          </div>
         </div>
+
+            <div className="p-5 bg-white/60 border border-white/80 rounded-2xl shadow-sm">
+              <button
+                type="button"
+                onClick={() => setActivePanel("furniture")}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-900 hover:bg-gray-50 transition"
+              >
+                Add Furniture +
+              </button>
+            </div>
 
         {/* ROOM AESTHETICS CONTROLS */}
         <div className="p-5 bg-white/60 border border-white/80 rounded-2xl shadow-sm space-y-4">
@@ -190,14 +218,24 @@ export default function Sidebar({
             {/* Shape Select */}
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Shape</label>
-              <select
-                value={roomShape}
-                onChange={(e) => setRoomShape(e.target.value)}
-                className="w-full p-2.5 rounded-xl bg-white border border-gray-200 text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all shadow-sm font-semibold text-sm cursor-pointer"
-              >
-                <option value="rectangle">Rectangle</option>
-                <option value="square">Square</option>
-              </select>
+              <div className="relative">
+                <select
+                  value={roomShape}
+                  onChange={(e) => setRoomShape(e.target.value)}
+                  className="w-full p-2.5 pr-10 rounded-xl bg-white border border-gray-200 text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all shadow-sm font-semibold text-sm cursor-pointer appearance-none"
+                >
+                  <option value="rectangle">Rectangle</option>
+                  <option value="square">Square</option>
+                </select>
+                <svg
+                  className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
             </div>
 
             {/* Wall Color - Hybrid Input */}
@@ -264,18 +302,6 @@ export default function Sidebar({
           </div>
         </div>
 
-            <div className="p-5 bg-white/60 border border-white/80 rounded-2xl shadow-sm">
-              <button
-                type="button"
-                onClick={() => setActivePanel("furniture")}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-900 hover:bg-gray-50 transition"
-              >
-                <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 5v14m7-7H5" />
-                </svg>
-                Add Furniture
-              </button>
-            </div>
           </div>
           {/* BOTTOM ACTION AREA */}
           <div className="mt-auto pt-6 border-t border-gray-200/50">

@@ -30,7 +30,9 @@ type LoadedDesign = {
   _id: string;
   title?: string;
   roomWidthFeet: number;
-  roomHeightFeet: number;
+  roomHeightFeet?: number;
+  roomLengthFeet?: number;
+  wallHeightFeet?: number;
   furniture: FurnitureItem[];
   roomShape?: string;
   wallColor?: string;
@@ -51,7 +53,8 @@ type FurnitureLibraryItem = {
 const serializeDesignSnapshot = ({
   title,
   roomWidthFeet,
-  roomHeightFeet,
+  roomLengthFeet,
+  wallHeightFeet,
   roomShape,
   wallColor,
   floorColor,
@@ -60,7 +63,8 @@ const serializeDesignSnapshot = ({
 }: {
   title: string;
   roomWidthFeet: number;
-  roomHeightFeet: number;
+  roomLengthFeet: number;
+  wallHeightFeet: number;
   roomShape: string;
   wallColor: string;
   floorColor: string;
@@ -70,7 +74,8 @@ const serializeDesignSnapshot = ({
   JSON.stringify({
     title,
     roomWidthFeet,
-    roomHeightFeet,
+    roomLengthFeet,
+    wallHeightFeet,
     roomShape,
     wallColor,
     floorColor,
@@ -256,13 +261,14 @@ function EditorPageContent() {
 
   /* ---------------- ROOM SIZE STATE ---------------- */
   const [roomWidthFeet, setRoomWidthFeet] = useState(12);
-  const [roomHeightFeet, setRoomHeightFeet] = useState(10);
+  const [roomLengthFeet, setRoomLengthFeet] = useState(10);
+  const [wallHeightFeet, setWallHeightFeet] = useState(9);
 
   const roomWidthInches = roomWidthFeet * 12;
-  const roomHeightInches = roomHeightFeet * 12;
+  const roomLengthInches = roomLengthFeet * 12;
 
   const STAGE_WIDTH = roomWidthInches * PIXELS_PER_INCH;
-  const STAGE_HEIGHT = roomHeightInches * PIXELS_PER_INCH;
+  const STAGE_HEIGHT = roomLengthInches * PIXELS_PER_INCH;
 
   const GRID_SIZE = GRID_SIZE_INCHES * PIXELS_PER_INCH;
 
@@ -289,6 +295,33 @@ function EditorPageContent() {
   const [renamingProject, setRenamingProject] = useState(false);
   const shapeRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
+
+  const handleRoomWidthFeetChange = (value: number) => {
+    const safeValue = value || 0;
+    if (roomShape === "square") {
+      setRoomWidthFeet(safeValue);
+      setRoomLengthFeet(safeValue);
+      return;
+    }
+    setRoomWidthFeet(safeValue);
+  };
+
+  const handleRoomLengthFeetChange = (value: number) => {
+    const safeValue = value || 0;
+    if (roomShape === "square") {
+      setRoomWidthFeet(safeValue);
+      setRoomLengthFeet(safeValue);
+      return;
+    }
+    setRoomLengthFeet(safeValue);
+  };
+
+  const handleRoomShapeChange = (value: string) => {
+    setRoomShape(value);
+    if (value === "square" && roomLengthFeet !== roomWidthFeet) {
+      setRoomLengthFeet(roomWidthFeet);
+    }
+  };
 
   const clampRotatedPosition = useCallback((
     x: number,
@@ -398,8 +431,15 @@ function EditorPageContent() {
         }
 
         const data: LoadedDesign = await res.json();
+        const loadedLength =
+          typeof data.roomLengthFeet === "number"
+            ? data.roomLengthFeet
+            : (data.roomHeightFeet ?? 10);
+        const loadedWallHeight = data.wallHeightFeet ?? 9;
+
         setRoomWidthFeet(data.roomWidthFeet);
-        setRoomHeightFeet(data.roomHeightFeet);
+        setRoomLengthFeet(loadedLength);
+        setWallHeightFeet(loadedWallHeight);
         setProjectName(data.title?.trim() || "Untitled Design");
         setFurniture(data.furniture ?? []);
         setRoomShape(data.roomShape || "rectangle");
@@ -412,7 +452,8 @@ function EditorPageContent() {
           serializeDesignSnapshot({
             title: data.title?.trim() || "Untitled Design",
             roomWidthFeet: data.roomWidthFeet,
-            roomHeightFeet: data.roomHeightFeet,
+            roomLengthFeet: loadedLength,
+            wallHeightFeet: loadedWallHeight,
             roomShape: data.roomShape || "rectangle",
             wallColor: data.wallColor || "#e2e8f0",
             floorColor: data.floorColor || "#f3f4f6",
@@ -485,7 +526,9 @@ function EditorPageContent() {
         body: JSON.stringify({
           title: projectName.trim() || "Untitled Design",
           roomWidthFeet,
-          roomHeightFeet,
+          roomHeightFeet: roomLengthFeet,
+          roomLengthFeet,
+          wallHeightFeet,
           roomShape,
           wallColor,
           floorColor,
@@ -511,7 +554,8 @@ function EditorPageContent() {
         serializeDesignSnapshot({
           title: savedTitle,
           roomWidthFeet,
-          roomHeightFeet,
+          roomLengthFeet,
+          wallHeightFeet,
           roomShape,
           wallColor,
           floorColor,
@@ -599,7 +643,8 @@ function EditorPageContent() {
         serializeDesignSnapshot({
           title: updatedTitle,
           roomWidthFeet,
-          roomHeightFeet,
+          roomLengthFeet,
+          wallHeightFeet,
           roomShape,
           wallColor,
           floorColor,
@@ -634,7 +679,8 @@ function EditorPageContent() {
       serializeDesignSnapshot({
         title: projectName.trim() || "Untitled Design",
         roomWidthFeet,
-        roomHeightFeet,
+        roomLengthFeet,
+        wallHeightFeet,
         roomShape,
         wallColor,
         floorColor,
@@ -644,7 +690,8 @@ function EditorPageContent() {
     [
       projectName,
       roomWidthFeet,
-      roomHeightFeet,
+      roomLengthFeet,
+      wallHeightFeet,
       roomShape,
       wallColor,
       floorColor,
@@ -663,11 +710,13 @@ function EditorPageContent() {
       {/* IMPORTED SIDEBAR COMPONENT */}
       <Sidebar
         roomWidthFeet={roomWidthFeet}
-        roomHeightFeet={roomHeightFeet}
-        setRoomWidthFeet={setRoomWidthFeet}
-        setRoomHeightFeet={setRoomHeightFeet}
+        roomLengthFeet={roomLengthFeet}
+        wallHeightFeet={wallHeightFeet}
+        setRoomWidthFeet={handleRoomWidthFeetChange}
+        setRoomLengthFeet={handleRoomLengthFeetChange}
+        setWallHeightFeet={setWallHeightFeet}
         roomShape={roomShape}
-        setRoomShape={setRoomShape}
+        setRoomShape={handleRoomShapeChange}
         wallColor={wallColor}
         setWallColor={setWallColor}
         floorColor={floorColor}
@@ -694,7 +743,7 @@ function EditorPageContent() {
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-white/50 gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <span className="text-sm font-bold text-gray-400 tracking-widest uppercase whitespace-nowrap">
-                Workspace <span className="text-gray-600 ml-1">{roomWidthFeet}ft × {roomHeightFeet}ft</span>
+                Workspace <span className="text-gray-600 ml-1">{roomWidthFeet}ft × {roomLengthFeet}ft</span>
               </span>
               <button
                 type="button"
@@ -731,6 +780,15 @@ function EditorPageContent() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {selectedId && (
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  className="h-8 px-3 rounded-lg border border-red-200 bg-red-50 text-xs font-bold text-red-700 hover:bg-red-100 transition"
+                >
+                  Delete Selected
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setViewMode(viewMode === "2d" ? "3d" : "2d")}
@@ -762,14 +820,6 @@ function EditorPageContent() {
                 className="h-8 px-3 rounded-lg border border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {saving ? "Saving..." : "Save"}
-              </button>
-              <button
-                type="button"
-                onClick={handleDeleteSelected}
-                disabled={!selectedId}
-                className="h-8 px-3 rounded-lg border border-red-200 bg-red-50 text-xs font-bold text-red-700 hover:bg-red-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Delete Selected
               </button>
             </div>
           </div>
@@ -1002,7 +1052,8 @@ function EditorPageContent() {
             ) : (
               <ThreeDView
                 roomWidthFeet={roomWidthFeet}
-                roomHeightFeet={roomHeightFeet}
+                roomLengthFeet={roomLengthFeet}
+                wallHeightFeet={wallHeightFeet}
                 furniture={furniture}
                 wallColor={wallColor}
                 floorColor={floorColor}

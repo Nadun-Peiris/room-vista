@@ -28,6 +28,11 @@ const normalizeLightIntensity = (value: unknown) => {
   return Math.min(2, Math.max(0.2, value));
 };
 
+const normalizeDimension = (value: unknown, fallback: number) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return fallback;
+  return value;
+};
+
 async function getAuthorizedUser(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -86,6 +91,8 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       title,
       roomWidthFeet,
       roomHeightFeet,
+      roomLengthFeet,
+      wallHeightFeet,
       roomShape,
       wallColor,
       floorColor,
@@ -93,12 +100,27 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
       furniture,
     } = body;
 
+    const normalizedRoomLength =
+      roomLengthFeet !== undefined
+        ? normalizeDimension(roomLengthFeet, 10)
+        : roomHeightFeet !== undefined
+          ? normalizeDimension(roomHeightFeet, 10)
+          : undefined;
+
     const updated = await Design.findOneAndUpdate(
       { _id: id, userId: user._id },
       {
         ...(typeof title === "string" ? { title } : {}),
         ...(typeof roomWidthFeet === "number" ? { roomWidthFeet } : {}),
-        ...(typeof roomHeightFeet === "number" ? { roomHeightFeet } : {}),
+        ...(normalizedRoomLength !== undefined
+          ? {
+              roomHeightFeet: normalizedRoomLength,
+              roomLengthFeet: normalizedRoomLength,
+            }
+          : {}),
+        ...(wallHeightFeet !== undefined
+          ? { wallHeightFeet: normalizeDimension(wallHeightFeet, 9) }
+          : {}),
         ...(roomShape !== undefined ? { roomShape: normalizeRoomShape(roomShape) } : {}),
         ...(wallColor !== undefined ? { wallColor: normalizeColor(wallColor, DEFAULT_WALL_COLOR) } : {}),
         ...(floorColor !== undefined ? { floorColor: normalizeColor(floorColor, DEFAULT_FLOOR_COLOR) } : {}),

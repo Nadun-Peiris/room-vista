@@ -24,6 +24,15 @@ const DesignSchema = new Schema(
       required: true,
     },
 
+    roomLengthFeet: {
+      type: Number,
+    },
+
+    wallHeightFeet: {
+      type: Number,
+      default: 9,
+    },
+
     roomShape: {
       type: String,
       enum: ["rectangle", "square"], 
@@ -72,7 +81,9 @@ if (models.Design) {
     Boolean(existingSchema.path("wallColor")) &&
     Boolean(existingSchema.path("floorColor")) &&
     Boolean(existingSchema.path("roomShape")) &&
-    Boolean(existingSchema.path("lightIntensity"));
+    Boolean(existingSchema.path("lightIntensity")) &&
+    Boolean(existingSchema.path("roomLengthFeet")) &&
+    Boolean(existingSchema.path("wallHeightFeet"));
 
   if (!hasRoomColorPaths) {
     delete models.Design;

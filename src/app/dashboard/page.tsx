@@ -10,6 +10,8 @@ type DashboardDesign = {
   title?: string;
   roomWidthFeet?: number;
   roomHeightFeet?: number;
+  roomLengthFeet?: number;
+  wallHeightFeet?: number;
   furniture?: Array<{ id: string }>;
   createdAt?: string;
 };
@@ -383,7 +385,10 @@ export default function DashboardPage() {
                   </h3>
                 )}
                 <p className="text-sm font-semibold text-gray-500">
-                  {design.roomWidthFeet ?? "-"}ft x {design.roomHeightFeet ?? "-"}ft
+                  W {design.roomWidthFeet ?? "-"}ft × L {design.roomLengthFeet ?? design.roomHeightFeet ?? "-"}ft
+                </p>
+                <p className="text-xs font-medium text-gray-400">
+                  Wall Height: {design.wallHeightFeet ?? "-"}ft
                 </p>
                 <p className="text-xs font-medium text-gray-400">
                   Items: {design.furniture?.length ?? 0}
