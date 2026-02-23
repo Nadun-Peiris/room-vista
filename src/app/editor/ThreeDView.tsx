@@ -25,6 +25,7 @@ interface FurnitureItem3D {
   height: number;
   fill: string;
   rotation: number;
+  heightFeet?: number;
 }
 
 export default function ThreeDView({
