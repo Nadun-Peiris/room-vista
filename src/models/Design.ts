@@ -1,5 +1,22 @@
 import mongoose, { Schema, model, models } from "mongoose";
 
+const FurnitureItemSchema = new Schema(
+  {
+    id: { type: String },
+    // Keep legacy field name used by the editor payload.
+    type: { type: String },
+    x: { type: Number },
+    y: { type: Number },
+    width: { type: Number },
+    height: { type: Number },
+    heightFeet: { type: Number },
+    fill: { type: String },
+    rotation: { type: Number },
+    modelUrl: { type: String },
+  },
+  { _id: false }
+);
+
 const DesignSchema = new Schema(
   {
     userId: {
@@ -58,36 +75,16 @@ const DesignSchema = new Schema(
 
     /* FURNITURE */
     furniture: {
-      type: [
-        {
-          id: String,
-          x: Number,
-          y: Number,
-          width: Number,
-          height: Number,
-          fill: String,
-          rotation: Number,
-        },
-      ],
+      type: [FurnitureItemSchema],
       default: [],
     },
   },
   { timestamps: true }
 );
 
+// Force recompilation in dev/HMR so stale schema versions do not persist.
 if (models.Design) {
-  const existingSchema = (models.Design as mongoose.Model<unknown>).schema;
-  const hasRoomColorPaths =
-    Boolean(existingSchema.path("wallColor")) &&
-    Boolean(existingSchema.path("floorColor")) &&
-    Boolean(existingSchema.path("roomShape")) &&
-    Boolean(existingSchema.path("lightIntensity")) &&
-    Boolean(existingSchema.path("roomLengthFeet")) &&
-    Boolean(existingSchema.path("wallHeightFeet"));
-
-  if (!hasRoomColorPaths) {
-    delete models.Design;
-  }
+  delete models.Design;
 }
 
 export const Design =

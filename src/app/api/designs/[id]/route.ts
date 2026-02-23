@@ -137,8 +137,10 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     return NextResponse.json(updated, { status: 200 });
   } catch (error) {
     console.error("Update design error:", error);
+    const details =
+      error instanceof Error ? error.message : "Unknown server error";
     return NextResponse.json(
-      { error: "Failed to update design" },
+      { error: "Failed to update design", details },
       { status: 500 }
     );
   }

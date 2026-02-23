@@ -5,6 +5,8 @@ import { Suspense, useState, useRef, useEffect, useMemo, useCallback } from "rea
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useRouter, useSearchParams } from "next/navigation";
+import { auth } from "@/lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 // Import your new Sidebar component (Adjust the path as needed based on your folder structure)
 import Sidebar from "./Sidebar"; 
@@ -13,6 +15,7 @@ import ThreeDView from "./ThreeDView";
 const GRID_SIZE_INCHES = 1;
 const MAJOR_GRID_INTERVAL_INCHES = 12;
 const PIXELS_PER_INCH = 5;
+const RULER_SIZE = 32;
 
 type FurnitureItem = {
   id: string;
@@ -24,6 +27,7 @@ type FurnitureItem = {
   rotation: number;
   heightFeet?: number;
   type?: string;
+  modelUrl?: string;
 };
 
 type LoadedDesign = {
@@ -48,6 +52,18 @@ type FurnitureLibraryItem = {
   depthInches: number;
   heightFeet: number;
   defaultColor: string;
+  modelUrl?: string;
+  thumbnailUrl?: string;
+};
+
+type FurnitureApiItem = {
+  _id?: string;
+  name?: string;
+  category?: string;
+  widthInches?: number | string;
+  depthInches?: number | string;
+  heightFeet?: number | string;
+  modelUrl?: string;
   thumbnailUrl?: string;
 };
 
@@ -83,6 +99,35 @@ const serializeDesignSnapshot = ({
     lightIntensity,
     furniture,
   });
+
+const sanitizeFurnitureForSave = (items: FurnitureItem[]): FurnitureItem[] =>
+  items
+    .map((item) => ({
+      id: typeof item.id === "string" ? item.id : crypto.randomUUID(),
+      x: Number.isFinite(item.x) ? item.x : 0,
+      y: Number.isFinite(item.y) ? item.y : 0,
+      width: Number.isFinite(item.width) ? item.width : 0,
+      height: Number.isFinite(item.height) ? item.height : 0,
+      fill: typeof item.fill === "string" ? item.fill : "#64748b",
+      rotation: Number.isFinite(item.rotation) ? item.rotation : 0,
+      ...(typeof item.type === "string" ? { type: item.type } : {}),
+      ...(Number.isFinite(item.heightFeet) ? { heightFeet: item.heightFeet } : {}),
+      ...(typeof item.modelUrl === "string" ? { modelUrl: item.modelUrl } : {}),
+    }))
+    .filter((item) => item.width > 0 && item.height > 0);
+
+const parseErrorResponse = async (res: Response) => {
+  const raw = await res.text();
+  if (!raw) return "<empty response body>";
+  try {
+    const parsed = JSON.parse(raw) as { error?: string; details?: string };
+    if (parsed.details) return `${parsed.error || "Error"}: ${parsed.details}`;
+    if (parsed.error) return parsed.error;
+  } catch {
+    // Keep raw body if not JSON.
+  }
+  return raw;
+};
 
 const FURNITURE_LIBRARY: FurnitureLibraryItem[] = [
   {
@@ -266,6 +311,7 @@ function EditorPageContent() {
           rotation: 0,
           heightFeet: item.heightFeet,
           type: item.id,
+          modelUrl: item.modelUrl,
         },
       ];
     });
@@ -424,13 +470,12 @@ function EditorPageContent() {
   }, [designId]);
 
   useEffect(() => {
-    const loadDesign = async () => {
-      if (!designId) return;
+    if (!designId) return;
+    let isMounted = true;
 
+    const loadDesign = async (user: { getIdToken: () => Promise<string> } | null) => {
+      if (!user || !isMounted) return;
       try {
-        const user = await import("@/lib/firebase").then((m) => m.auth.currentUser);
-        if (!user) return;
-
         const token = await user.getIdToken();
         const res = await fetch(`/api/designs/${designId}`, {
           headers: {
@@ -480,7 +525,15 @@ function EditorPageContent() {
       }
     };
 
-    loadDesign();
+    void loadDesign(auth.currentUser);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      void loadDesign(user);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, [designId]);
 
   useEffect(() => {
@@ -509,16 +562,17 @@ function EditorPageContent() {
           const data = await res.json();
           if (!Array.isArray(data) || !isMounted) return;
 
-          const mapped: FurnitureLibraryItem[] = data.map((item: any) => {
+          const mapped: FurnitureLibraryItem[] = data.map((item: FurnitureApiItem) => {
             const category = (item.category || "decor").toString().toLowerCase();
             return {
-              id: item._id,
+              id: item._id || crypto.randomUUID(),
               name: item.name || "Untitled Furniture",
               category,
               widthInches: Number(item.widthInches) || 0,
               depthInches: Number(item.depthInches) || 0,
               heightFeet: Number(item.heightFeet) || 0,
               defaultColor: CATEGORY_COLORS[category] || "#64748b",
+              modelUrl: item.modelUrl,
               thumbnailUrl: item.thumbnailUrl,
             };
           });
@@ -556,6 +610,22 @@ function EditorPageContent() {
     setSelectedId(null);
   };
 
+  const selectedFurniture = useMemo(
+    () => furniture.find((item) => item.id === selectedId) ?? null,
+    [furniture, selectedId]
+  );
+
+  const handleSelectedFurnitureColorChange = useCallback((color: string) => {
+    if (!selectedId) return;
+    setFurniture((prev) =>
+      prev.map((item) =>
+        item.id === selectedId
+          ? { ...item, fill: color }
+          : item
+      )
+    );
+  }, [selectedId]);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!selectedId) return;
@@ -582,37 +652,63 @@ function EditorPageContent() {
       setSaving(true);
 
       const user = await import("@/lib/firebase").then((m) => m.auth.currentUser);
-      if (!user) return;
+      if (!user) {
+        console.error("Save blocked: user not authenticated");
+        return false;
+      }
 
-      const token = await user.getIdToken();
+      let token = await user.getIdToken();
 
       const isUpdate = Boolean(currentDesignId);
-      const endpoint = isUpdate ? `/api/designs/${currentDesignId}` : "/api/designs";
-      const method = isUpdate ? "PATCH" : "POST";
+      const payload = {
+        title: projectName.trim() || "Untitled Design",
+        roomWidthFeet,
+        roomHeightFeet: roomLengthFeet,
+        roomLengthFeet,
+        wallHeightFeet,
+        roomShape,
+        wallColor,
+        floorColor,
+        lightIntensity,
+        furniture: sanitizeFurnitureForSave(furniture),
+      };
 
-      const res = await fetch(endpoint, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          title: projectName.trim() || "Untitled Design",
-          roomWidthFeet,
-          roomHeightFeet: roomLengthFeet,
-          roomLengthFeet,
-          wallHeightFeet,
-          roomShape,
-          wallColor,
-          floorColor,
-          lightIntensity,
-          furniture,
-        }),
-      });
+      const sendSaveRequest = async (
+        method: "PATCH" | "POST",
+        endpoint: string,
+        authToken: string
+      ) =>
+        fetch(endpoint, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify(payload),
+        });
+
+      let endpoint = isUpdate ? `/api/designs/${currentDesignId}` : "/api/designs";
+      let method: "PATCH" | "POST" = isUpdate ? "PATCH" : "POST";
+      let res = await sendSaveRequest(method, endpoint, token);
+
+      // If update fails for any reason, attempt create as a recovery path.
+      if (!res.ok && isUpdate) {
+        method = "POST";
+        endpoint = "/api/designs";
+        res = await sendSaveRequest(method, endpoint, token);
+      }
+
+      // If auth is stale, refresh token and retry once.
+      if (!res.ok && (res.status === 401 || res.status === 403)) {
+        token = await user.getIdToken(true);
+        res = await sendSaveRequest(method, endpoint, token);
+      }
 
       if (!res.ok) {
-        console.error("Failed to save");
-        return;
+        const errorText = await parseErrorResponse(res);
+        throw new Error(
+          `Save failed (${res.status} ${res.statusText}) ${method} ${endpoint}: ${errorText}`
+        );
       }
 
       const data = await res.json();
@@ -801,6 +897,14 @@ function EditorPageContent() {
         renamingProject={renamingProject}
         furnitureLibrary={furnitureLibrary}
         addFurnitureToRoom={addFurnitureToRoom}
+        selectedFurnitureName={selectedFurniture
+          ? selectedFurniture.type
+            ? furnitureLibrary.find((libItem) => libItem.id === selectedFurniture.type)?.name ||
+              "Selected Furniture"
+            : "Selected Furniture"
+          : null}
+        selectedFurnitureColor={selectedFurniture?.fill ?? null}
+        onSelectedFurnitureColorChange={handleSelectedFurnitureColorChange}
         onRequestExit={handleRequestExit}
       />
 
@@ -900,227 +1004,310 @@ function EditorPageContent() {
           {/* Scrollable viewport keeps big rooms contained inside page */}
           <div className="flex-1 min-h-0 overflow-auto bg-gray-50/50 p-4">
             {viewMode === "2d" ? (
-              <div style={{ width: scaledStageWidth, height: scaledStageHeight }}>
-                <Stage
-                  width={scaledStageWidth}
-                  height={scaledStageHeight}
-                  scaleX={clampedZoom}
-                  scaleY={clampedZoom}
-                  className="cursor-crosshair"
-                  onPointerDown={checkDeselect}
+              <div
+                className="relative"
+                style={{
+                  width: scaledStageWidth + RULER_SIZE,
+                  height: scaledStageHeight + RULER_SIZE,
+                }}
+              >
+                <div
+                  className="absolute left-0 top-0 border border-gray-200 bg-gradient-to-br from-white to-gray-100"
+                  style={{ width: RULER_SIZE, height: RULER_SIZE }}
                 >
-                  <Layer>
-                  {/* ROOM FLOOR */}
-                  <Rect
-                    x={0}
-                    y={0}
-                    width={STAGE_WIDTH}
-                    height={STAGE_HEIGHT}
-                    fill={floorColor}
-                  />
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                    ft
+                  </span>
+                </div>
 
-                  {/* VERTICAL GRID (1 inch spacing) */}
-                  {verticalIndices.map((i) => {
-                    const x = i * GRID_SIZE;
-                    const inchesFromOrigin = i * GRID_SIZE_INCHES;
-                    const isFootMark =
-                      inchesFromOrigin % MAJOR_GRID_INTERVAL_INCHES === 0;
+                <div
+                  className="absolute top-0 border-b border-gray-200 bg-gradient-to-b from-white to-gray-50"
+                  style={{ left: RULER_SIZE, width: scaledStageWidth, height: RULER_SIZE }}
+                >
+                  {Array.from({ length: verticalLineCount + 1 }, (_, i) => {
+                    const x = i * GRID_SIZE * clampedZoom;
+                    const isMajor = i % MAJOR_GRID_INTERVAL_INCHES === 0;
+                    const isHalf = i % (MAJOR_GRID_INTERVAL_INCHES / 2) === 0;
+                    const feet = i / MAJOR_GRID_INTERVAL_INCHES;
                     return (
-                      <Line
-                        key={`v-${i}`}
-                        points={[x, 0, x, STAGE_HEIGHT]}
-                        stroke={isFootMark ? "rgba(0,0,0,0.11)" : "rgba(0,0,0,0.04)"}
-                        strokeWidth={isFootMark ? 1.3 : 1}
-                      />
+                      <div key={`ruler-top-${i}`}>
+                        <div
+                          className="absolute bg-gray-500/90"
+                          style={{
+                            left: x,
+                            bottom: 0,
+                            width: 1,
+                            height: isMajor ? 16 : isHalf ? 10 : 6,
+                          }}
+                        />
+                        {isMajor && (
+                          <span
+                            className="absolute text-[10px] font-semibold text-gray-600"
+                            style={{ left: x + 3, top: 3 }}
+                          >
+                            {feet}
+                          </span>
+                        )}
+                      </div>
                     );
                   })}
+                </div>
 
-                  {/* HORIZONTAL GRID (1 inch spacing) */}
-                  {horizontalIndices.map((i) => {
-                    const y = i * GRID_SIZE;
-                    const inchesFromOrigin = i * GRID_SIZE_INCHES;
-                    const isFootMark =
-                      inchesFromOrigin % MAJOR_GRID_INTERVAL_INCHES === 0;
+                <div
+                  className="absolute left-0 border-r border-gray-200 bg-gradient-to-r from-white to-gray-50"
+                  style={{ top: RULER_SIZE, width: RULER_SIZE, height: scaledStageHeight }}
+                >
+                  {Array.from({ length: horizontalLineCount + 1 }, (_, i) => {
+                    const y = i * GRID_SIZE * clampedZoom;
+                    const isMajor = i % MAJOR_GRID_INTERVAL_INCHES === 0;
+                    const isHalf = i % (MAJOR_GRID_INTERVAL_INCHES / 2) === 0;
+                    const feet = i / MAJOR_GRID_INTERVAL_INCHES;
                     return (
-                      <Line
-                        key={`h-${i}`}
-                        points={[0, y, STAGE_WIDTH, y]}
-                        stroke={isFootMark ? "rgba(0,0,0,0.11)" : "rgba(0,0,0,0.04)"}
-                        strokeWidth={isFootMark ? 1.3 : 1}
-                      />
+                      <div key={`ruler-left-${i}`}>
+                        <div
+                          className="absolute bg-gray-500/90"
+                          style={{
+                            right: 0,
+                            top: y,
+                            width: isMajor ? 16 : isHalf ? 10 : 6,
+                            height: 1,
+                          }}
+                        />
+                        {isMajor && (
+                          <span
+                            className="absolute text-[10px] font-semibold text-gray-600"
+                            style={{ right: 18, top: y - 6 }}
+                          >
+                            {feet}
+                          </span>
+                        )}
+                      </div>
                     );
                   })}
+                </div>
 
-                  {/* ROOM BORDER (Sharp Corners) */}
-                  <Rect
-                    x={0}
-                    y={0}
-                    width={STAGE_WIDTH}
-                    height={STAGE_HEIGHT}
-                    stroke={wallColor}
-                    strokeWidth={6}
-                  />
-
-                  {/* FURNITURE */}
-                  {furniture.map((item) => (
+                <div style={{ position: "absolute", left: RULER_SIZE, top: RULER_SIZE }}>
+                  <Stage
+                    width={scaledStageWidth}
+                    height={scaledStageHeight}
+                    scaleX={clampedZoom}
+                    scaleY={clampedZoom}
+                    className="cursor-crosshair"
+                    onPointerDown={checkDeselect}
+                  >
+                    <Layer>
+                    {/* ROOM FLOOR */}
                     <Rect
-                      key={item.id}
-                      ref={item.id === selectedId ? shapeRef : null}
-                      {...item}
-                      draggable
+                      x={0}
+                      y={0}
+                      width={STAGE_WIDTH}
+                      height={STAGE_HEIGHT}
+                      fill={floorColor}
+                    />
 
-                      // Sharp edges as requested
-                      cornerRadius={0}
-                      
-                      // Dynamic Selection Shadow
-                      shadowColor={item.id === selectedId ? "rgba(5, 150, 105, 0.4)" : "rgba(0, 0, 0, 0.15)"}
-                      shadowBlur={item.id === selectedId ? 20 : 10}
-                      shadowOffsetX={0}
-                      shadowOffsetY={item.id === selectedId ? 12 : 6}
+                    {/* VERTICAL GRID (1 inch spacing) */}
+                    {verticalIndices.map((i) => {
+                      const x = i * GRID_SIZE;
+                      const inchesFromOrigin = i * GRID_SIZE_INCHES;
+                      const isFootMark =
+                        inchesFromOrigin % MAJOR_GRID_INTERVAL_INCHES === 0;
+                      return (
+                        <Line
+                          key={`v-${i}`}
+                          points={[x, 0, x, STAGE_HEIGHT]}
+                          stroke={isFootMark ? "rgba(0,0,0,0.11)" : "rgba(0,0,0,0.04)"}
+                          strokeWidth={isFootMark ? 1.3 : 1}
+                        />
+                      );
+                    })}
 
-                      dragBoundFunc={function (pos) {
-                        const newX = snapToGrid(pos.x);
-                        const newY = snapToGrid(pos.y);
-                        const bounded = clampRotatedPosition(
-                          newX,
-                          newY,
-                          item.width,
-                          item.height,
-                          item.rotation
-                        );
+                    {/* HORIZONTAL GRID (1 inch spacing) */}
+                    {horizontalIndices.map((i) => {
+                      const y = i * GRID_SIZE;
+                      const inchesFromOrigin = i * GRID_SIZE_INCHES;
+                      const isFootMark =
+                        inchesFromOrigin % MAJOR_GRID_INTERVAL_INCHES === 0;
+                      return (
+                        <Line
+                          key={`h-${i}`}
+                          points={[0, y, STAGE_WIDTH, y]}
+                          stroke={isFootMark ? "rgba(0,0,0,0.11)" : "rgba(0,0,0,0.04)"}
+                          strokeWidth={isFootMark ? 1.3 : 1}
+                        />
+                      );
+                    })}
 
-                        return {
-                          x: snapToGrid(bounded.x),
-                          y: snapToGrid(bounded.y),
-                        };
-                      }}
+                    {/* ROOM BORDER (Sharp Corners) */}
+                    <Rect
+                      x={0}
+                      y={0}
+                      width={STAGE_WIDTH}
+                      height={STAGE_HEIGHT}
+                      stroke={wallColor}
+                      strokeWidth={6}
+                    />
 
-                      onClick={(e) => {
-                        e.cancelBubble = true;
-                        setSelectedId(item.id);
-                      }}
+                    {/* FURNITURE */}
+                    {furniture.map((item) => (
+                      <Rect
+                        key={item.id}
+                        ref={item.id === selectedId ? shapeRef : null}
+                        {...item}
+                        draggable
 
-                      onDragEnd={(e) => {
-                        const node = e.target;
-                        const newX = snapToGrid(node.x());
-                        const newY = snapToGrid(node.y());
-                        const bounded = clampRotatedPosition(
-                          newX,
-                          newY,
-                          item.width,
-                          item.height,
-                          item.rotation
-                        );
+                        // Sharp edges as requested
+                        cornerRadius={0}
+                        
+                        // Dynamic Selection Shadow
+                        shadowColor={item.id === selectedId ? "rgba(5, 150, 105, 0.4)" : "rgba(0, 0, 0, 0.15)"}
+                        shadowBlur={item.id === selectedId ? 20 : 10}
+                        shadowOffsetX={0}
+                        shadowOffsetY={item.id === selectedId ? 12 : 6}
 
-                        if (
-                          isColliding(
-                            item.id,
-                            bounded.x,
-                            bounded.y,
+                        dragBoundFunc={function (pos) {
+                          const newX = snapToGrid(pos.x);
+                          const newY = snapToGrid(pos.y);
+                          const bounded = clampRotatedPosition(
+                            newX,
+                            newY,
                             item.width,
                             item.height,
                             item.rotation
-                          )
-                        ) {
-                          node.position({ x: item.x, y: item.y });
-                          return;
-                        }
+                          );
 
-                        setFurniture((prev) =>
-                          prev.map((f) =>
-                            f.id === item.id
-                              ? {
-                                  ...f,
-                                  x: snapToGrid(bounded.x),
-                                  y: snapToGrid(bounded.y),
-                                }
-                              : f
-                          )
-                        );
-                      }}
+                          return {
+                            x: snapToGrid(bounded.x),
+                            y: snapToGrid(bounded.y),
+                          };
+                        }}
 
-                      onTransformEnd={() => {
-                        const node = shapeRef.current;
-                        if (!node) return;
+                        onClick={(e) => {
+                          e.cancelBubble = true;
+                          setSelectedId(item.id);
+                        }}
 
-                        const scaleX = node.scaleX();
-                        const scaleY = node.scaleY();
-
-                        node.scaleX(1);
-                        node.scaleY(1);
-
-                        const newWidth = Math.min(Math.max(40, node.width() * scaleX), STAGE_WIDTH);
-                        const newHeight = Math.min(Math.max(40, node.height() * scaleY), STAGE_HEIGHT);
-                        const rotation = node.rotation();
-                        const bounded = clampRotatedPosition(
-                          node.x(),
-                          node.y(),
-                          newWidth,
-                          newHeight,
-                          rotation
-                        );
-                        const newX = snapToGrid(bounded.x);
-                        const newY = snapToGrid(bounded.y);
-
-                        if (
-                          isColliding(
-                            item.id,
+                        onDragEnd={(e) => {
+                          const node = e.target;
+                          const newX = snapToGrid(node.x());
+                          const newY = snapToGrid(node.y());
+                          const bounded = clampRotatedPosition(
                             newX,
                             newY,
+                            item.width,
+                            item.height,
+                            item.rotation
+                          );
+
+                          if (
+                            isColliding(
+                              item.id,
+                              bounded.x,
+                              bounded.y,
+                              item.width,
+                              item.height,
+                              item.rotation
+                            )
+                          ) {
+                            node.position({ x: item.x, y: item.y });
+                            return;
+                          }
+
+                          setFurniture((prev) =>
+                            prev.map((f) =>
+                              f.id === item.id
+                                ? {
+                                    ...f,
+                                    x: snapToGrid(bounded.x),
+                                    y: snapToGrid(bounded.y),
+                                  }
+                                : f
+                            )
+                          );
+                        }}
+
+                        onTransformEnd={() => {
+                          const node = shapeRef.current;
+                          if (!node) return;
+
+                          const scaleX = node.scaleX();
+                          const scaleY = node.scaleY();
+
+                          node.scaleX(1);
+                          node.scaleY(1);
+
+                          const newWidth = Math.min(Math.max(40, node.width() * scaleX), STAGE_WIDTH);
+                          const newHeight = Math.min(Math.max(40, node.height() * scaleY), STAGE_HEIGHT);
+                          const rotation = node.rotation();
+                          const bounded = clampRotatedPosition(
+                            node.x(),
+                            node.y(),
                             newWidth,
                             newHeight,
                             rotation
-                          )
-                        ) {
-                          node.width(item.width);
-                          node.height(item.height);
-                          node.x(item.x);
-                          node.y(item.y);
-                          node.rotation(item.rotation);
-                          return;
-                        }
+                          );
+                          const newX = snapToGrid(bounded.x);
+                          const newY = snapToGrid(bounded.y);
 
-                        setFurniture((prev) =>
-                          prev.map((f) =>
-                            f.id === item.id
-                              ? {
-                                  ...f,
-                                  x: snapToGrid(newX),
-                                  y: snapToGrid(newY),
-                                  width: newWidth,
-                                  height: newHeight,
-                                  rotation,
-                                }
-                              : f
-                          )
-                        );
-                      }}
-                    />
-                  ))}
-
-                  {/* CUSTOMIZED TRANSFORMER */}
-                    {selectedId && (
-                      <Transformer
-                        ref={trRef}
-                        rotateEnabled={true}
-                        flipEnabled={false}
-                        anchorStroke="#059669"
-                        anchorFill="#ffffff"
-                        anchorSize={10}
-                        borderStroke="#059669"
-                        borderDash={[5, 5]}
-                        borderStrokeWidth={2}
-                        padding={2}
-                        boundBoxFunc={(oldBox, newBox) => {
-                          if (newBox.width < 40 || newBox.height < 40) {
-                            return oldBox;
+                          if (
+                            isColliding(
+                              item.id,
+                              newX,
+                              newY,
+                              newWidth,
+                              newHeight,
+                              rotation
+                            )
+                          ) {
+                            node.width(item.width);
+                            node.height(item.height);
+                            node.x(item.x);
+                            node.y(item.y);
+                            node.rotation(item.rotation);
+                            return;
                           }
-                          return newBox;
+
+                          setFurniture((prev) =>
+                            prev.map((f) =>
+                              f.id === item.id
+                                ? {
+                                    ...f,
+                                    x: snapToGrid(newX),
+                                    y: snapToGrid(newY),
+                                    width: newWidth,
+                                    height: newHeight,
+                                    rotation,
+                                  }
+                                : f
+                            )
+                          );
                         }}
                       />
-                    )}
-                  </Layer>
-                </Stage>
+                    ))}
+
+                    {/* CUSTOMIZED TRANSFORMER */}
+                      {selectedId && (
+                        <Transformer
+                          ref={trRef}
+                          rotateEnabled={true}
+                          flipEnabled={false}
+                          anchorStroke="#059669"
+                          anchorFill="#ffffff"
+                          anchorSize={10}
+                          borderStroke="#059669"
+                          borderDash={[5, 5]}
+                          borderStrokeWidth={2}
+                          padding={2}
+                          boundBoxFunc={(oldBox, newBox) => {
+                            if (newBox.width < 40 || newBox.height < 40) {
+                              return oldBox;
+                            }
+                            return newBox;
+                          }}
+                        />
+                      )}
+                    </Layer>
+                  </Stage>
+                </div>
               </div>
             ) : (
               <ThreeDView
@@ -1128,9 +1315,11 @@ function EditorPageContent() {
                 roomLengthFeet={roomLengthFeet}
                 wallHeightFeet={wallHeightFeet}
                 furniture={furniture}
+                furnitureLibrary={furnitureLibrary}
                 wallColor={wallColor}
                 floorColor={floorColor}
                 lightIntensity={lightIntensity}
+                pixelsPerFoot={PIXELS_PER_INCH * 12}
               />
             )}
           </div>

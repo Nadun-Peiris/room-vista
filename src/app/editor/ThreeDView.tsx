@@ -1,20 +1,32 @@
 "use client";
 
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, ContactShadows } from "@react-three/drei";
-import type { Mesh } from "three";
+import { Box3, Color, Vector3, type Mesh, type Object3D } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
+
+const ORIENTATION_STEPS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
 
 interface ThreeDProps {
   roomWidthFeet: number;
   roomLengthFeet: number;
   wallHeightFeet: number;
   furniture: FurnitureItem3D[];
+  furnitureLibrary: FurnitureLibraryItem3D[];
   wallColor: string;
   floorColor: string;
   lightIntensity: number;
   zoom?: number;
+  pixelsPerFoot?: number;
+}
+
+interface FurnitureLibraryItem3D {
+  id: string;
+  modelUrl?: string;
+  heightFeet?: number;
 }
 
 interface FurnitureItem3D {
@@ -26,6 +38,8 @@ interface FurnitureItem3D {
   fill: string;
   rotation: number;
   heightFeet?: number;
+  type?: string;
+  modelUrl?: string;
 }
 
 export default function ThreeDView({
@@ -33,16 +47,22 @@ export default function ThreeDView({
   roomLengthFeet,
   wallHeightFeet,
   furniture,
+  furnitureLibrary,
   wallColor,
   floorColor,
   lightIntensity,
   zoom = 1,
+  pixelsPerFoot = 60,
 }: ThreeDProps) {
   const roomWidth = roomWidthFeet;
   const roomLength = roomLengthFeet;
   const roomBaseY = -wallHeightFeet / 2;
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const baseDistance = Math.max(roomWidth, roomLength) * 2;
+  const furnitureById = useMemo(
+    () => new Map(furnitureLibrary.map((item) => [item.id, item])),
+    [furnitureLibrary]
+  );
 
   return (
     <div className="w-full h-full bg-gray-50/50">
@@ -92,31 +112,39 @@ export default function ThreeDView({
 
         {/* FURNITURE */}
         {furniture.map((item) => {
-          // Math correction: 2D maps from top-left, 3D maps from center.
-          // We divide by 60 because your 2D grid uses 60 pixels per foot.
-          const xPos = (item.x + item.width / 2) / 60 - roomWidth / 2;
-          const zPos = (item.y + item.height / 2) / 60 - roomLength / 2;
-          const widthFeet = item.width / 60;
-          const depthFeet = item.height / 60;
+          const libraryItem = item.type ? furnitureById.get(item.type) : undefined;
+          const modelUrl = item.modelUrl || libraryItem?.modelUrl;
+          const widthPx = Number(item.width) || 0;
+          const depthPx = Number(item.height) || 0;
+          if (widthPx <= 0 || depthPx <= 0) return null;
+
+          const itemHeightFeet =
+            Number(item.heightFeet) > 0
+              ? Number(item.heightFeet)
+              : Number(libraryItem?.heightFeet) > 0
+                ? Number(libraryItem?.heightFeet)
+                : 1;
+
+          // Convert 2D top-left pixel coordinates into centered 3D feet coordinates.
+          const xPos = (item.x + widthPx / 2) / pixelsPerFoot - roomWidth / 2;
+          const zPos = (item.y + depthPx / 2) / pixelsPerFoot - roomLength / 2;
+          const widthFeet = widthPx / pixelsPerFoot;
+          const depthFeet = depthPx / pixelsPerFoot;
           
           return (
-            <mesh
+            <group
               key={item.id}
-              position={[
-                xPos,
-                roomBaseY + (item.heightFeet || 1) / 2,
-                zPos
-              ]}
+              position={[xPos, roomBaseY, zPos]}
               rotation={[0, -item.rotation * Math.PI / 180, 0]}
-              castShadow
-              receiveShadow
             >
-              <boxGeometry args={[widthFeet, item.heightFeet || 1, depthFeet]} />
-              <meshStandardMaterial 
-                color={item.fill} 
-                roughness={0.3} // Gives it a nice matte finish
+              <FurnitureAsset
+                modelUrl={modelUrl}
+                widthFeet={widthFeet}
+                depthFeet={depthFeet}
+                heightFeet={itemHeightFeet}
+                color={item.fill || "#64748b"}
               />
-            </mesh>
+            </group>
           );
         })}
 
@@ -125,6 +153,170 @@ export default function ThreeDView({
       </Canvas>
     </div>
   );
+}
+
+function FurnitureAsset({
+  modelUrl,
+  widthFeet,
+  depthFeet,
+  heightFeet,
+  color,
+}: {
+  modelUrl?: string;
+  widthFeet: number;
+  depthFeet: number;
+  heightFeet: number;
+  color: string;
+}) {
+  const FLOOR_SNAP_OFFSET = 0.02;
+  const [sourceScene, setSourceScene] = useState<Object3D | null>(null);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!modelUrl) return;
+
+    let active = true;
+
+    const loader = new GLTFLoader();
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath("https://www.gstatic.com/draco/v1/decoders/");
+    loader.setDRACOLoader(dracoLoader);
+    loader.load(
+      modelUrl,
+      (gltf) => {
+        if (!active) return;
+        gltf.scene.userData.__modelUrl = modelUrl;
+        setSourceScene(gltf.scene);
+        setFailedUrl((prev) => (prev === modelUrl ? null : prev));
+      },
+      undefined,
+      (error) => {
+        console.error("GLB load error:", modelUrl, error);
+        if (!active) return;
+        setFailedUrl(modelUrl);
+      }
+    );
+
+    return () => {
+      active = false;
+      dracoLoader.dispose();
+    };
+  }, [modelUrl]);
+
+  const preparedModel = useMemo(() => {
+    if (!modelUrl || !sourceScene || sourceScene.userData.__modelUrl !== modelUrl) {
+      return null;
+    }
+
+    const cloned = sourceScene.clone(true);
+    const tintColor = new Color(color);
+
+    // Auto-orient imported assets (e.g., Z-up exports) to match target width/depth/height.
+    let bestRotation: [number, number, number] = [0, 0, 0];
+    let bestScore = Number.POSITIVE_INFINITY;
+    const targetWidthDepthRatio = widthFeet / Math.max(depthFeet, 1e-3);
+    const targetHeightRatio = heightFeet / Math.max((widthFeet + depthFeet) / 2, 1e-3);
+
+    for (const rx of ORIENTATION_STEPS) {
+      for (const ry of ORIENTATION_STEPS) {
+        for (const rz of ORIENTATION_STEPS) {
+          cloned.rotation.set(rx, ry, rz);
+          cloned.updateMatrixWorld(true);
+
+          const candidateBounds = new Box3().setFromObject(cloned);
+          const candidateSize = candidateBounds.getSize(new Vector3());
+          const sizeX = Math.max(candidateSize.x, 1e-3);
+          const sizeY = Math.max(candidateSize.y, 1e-3);
+          const sizeZ = Math.max(candidateSize.z, 1e-3);
+
+          const widthDepthRatio = sizeX / sizeZ;
+          const heightRatio = sizeY / Math.max((sizeX + sizeZ) / 2, 1e-3);
+          const ratioScore =
+            Math.abs(Math.log(widthDepthRatio / targetWidthDepthRatio)) +
+            Math.abs(Math.log(heightRatio / targetHeightRatio));
+
+          // Light tie-breaker so we don't rotate unnecessarily when multiple fits are similar.
+          const rotationPenalty =
+            (rx !== 0 ? 0.005 : 0) + (rz !== 0 ? 0.005 : 0) + (ry !== 0 ? 0.001 : 0);
+          const score = ratioScore + rotationPenalty;
+
+          if (score < bestScore) {
+            bestScore = score;
+            bestRotation = [rx, ry, rz];
+          }
+        }
+      }
+    }
+
+    cloned.rotation.set(bestRotation[0], bestRotation[1], bestRotation[2]);
+    cloned.updateMatrixWorld(true);
+
+    cloned.traverse((node) => {
+      const mesh = node as Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      // Ensure per-instance color edits don't mutate shared GLTF materials.
+      if (Array.isArray(mesh.material)) {
+        mesh.material = mesh.material.map((mat) => {
+          const next = mat.clone();
+          if ("color" in next && next.color) {
+            next.color = next.color.clone();
+            next.color.lerp(tintColor, 0.85);
+          }
+          return next;
+        });
+      } else if (mesh.material) {
+        const next = mesh.material.clone();
+        if ("color" in next && next.color) {
+          next.color = next.color.clone();
+          next.color.lerp(tintColor, 0.85);
+        }
+        mesh.material = next;
+      }
+    });
+
+    // 1) Ground + center the source model in local space.
+    const baseBounds = new Box3().setFromObject(cloned);
+    const baseCenter = baseBounds.getCenter(new Vector3());
+    cloned.position.x -= baseCenter.x;
+    cloned.position.z -= baseCenter.z;
+    cloned.position.y -= baseBounds.min.y;
+
+    // 2) Compute size after centering and scale to requested footprint/height.
+    const centeredBounds = new Box3().setFromObject(cloned);
+    const centeredSize = centeredBounds.getSize(new Vector3());
+    const safeX = centeredSize.x > 0 ? centeredSize.x : 1;
+    const safeY = centeredSize.y > 0 ? centeredSize.y : 1;
+    const safeZ = centeredSize.z > 0 ? centeredSize.z : 1;
+
+    const scaleX = widthFeet / safeX;
+    const scaleY = heightFeet / safeY;
+    const scaleZ = depthFeet / safeZ;
+    cloned.scale.set(
+      cloned.scale.x * scaleX,
+      cloned.scale.y * scaleY,
+      cloned.scale.z * scaleZ
+    );
+
+    // 3) Re-ground after scaling to eliminate any float caused by transforms.
+    const finalBounds = new Box3().setFromObject(cloned);
+    cloned.position.y -= finalBounds.min.y + FLOOR_SNAP_OFFSET;
+
+    return cloned;
+  }, [modelUrl, sourceScene, widthFeet, heightFeet, depthFeet, color]);
+
+  if (!preparedModel || !modelUrl || failedUrl === modelUrl) {
+    return (
+      <mesh position={[0, heightFeet / 2 - FLOOR_SNAP_OFFSET, 0]} castShadow receiveShadow>
+        <boxGeometry args={[widthFeet, heightFeet, depthFeet]} />
+        <meshStandardMaterial color={color} roughness={0.3} />
+      </mesh>
+    );
+  }
+
+  return <primitive object={preparedModel} />;
 }
 
 function CameraZoomSync({
@@ -161,6 +353,7 @@ function POVWalls({
   wallHeight: number;
   wallColor: string;
 }) {
+  const WALL_THICKNESS = 0.5;
   const frontWallRef = useRef<Mesh>(null);
   const backWallRef = useRef<Mesh>(null);
   const leftWallRef = useRef<Mesh>(null);
@@ -185,23 +378,23 @@ function POVWalls({
 
   return (
     <group>
-      <mesh ref={backWallRef} position={[0, 0, -roomLength / 2]} receiveShadow>
-        <boxGeometry args={[roomWidth, wallHeight, 0.2]} />
+      <mesh ref={backWallRef} position={[0, 0, -(roomLength / 2 + WALL_THICKNESS / 2)]} receiveShadow>
+        <boxGeometry args={[roomWidth, wallHeight, WALL_THICKNESS]} />
         <meshStandardMaterial color={wallColor} />
       </mesh>
 
-      <mesh ref={frontWallRef} position={[0, 0, roomLength / 2]} receiveShadow>
-        <boxGeometry args={[roomWidth, wallHeight, 0.2]} />
+      <mesh ref={frontWallRef} position={[0, 0, roomLength / 2 + WALL_THICKNESS / 2]} receiveShadow>
+        <boxGeometry args={[roomWidth, wallHeight, WALL_THICKNESS]} />
         <meshStandardMaterial color={wallColor} />
       </mesh>
 
-      <mesh ref={leftWallRef} position={[-roomWidth / 2, 0, 0]} receiveShadow>
-        <boxGeometry args={[0.2, wallHeight, roomLength]} />
+      <mesh ref={leftWallRef} position={[-(roomWidth / 2 + WALL_THICKNESS / 2), 0, 0]} receiveShadow>
+        <boxGeometry args={[WALL_THICKNESS, wallHeight, roomLength]} />
         <meshStandardMaterial color={wallColor} />
       </mesh>
 
-      <mesh ref={rightWallRef} position={[roomWidth / 2, 0, 0]} receiveShadow>
-        <boxGeometry args={[0.2, wallHeight, roomLength]} />
+      <mesh ref={rightWallRef} position={[roomWidth / 2 + WALL_THICKNESS / 2, 0, 0]} receiveShadow>
+        <boxGeometry args={[WALL_THICKNESS, wallHeight, roomLength]} />
         <meshStandardMaterial color={wallColor} />
       </mesh>
     </group>

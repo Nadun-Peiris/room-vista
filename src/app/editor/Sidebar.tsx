@@ -33,6 +33,9 @@ interface SidebarProps {
   renamingProject: boolean;
   furnitureLibrary: FurnitureLibraryItem[];
   addFurnitureToRoom: (item: FurnitureLibraryItem) => void;
+  selectedFurnitureName?: string | null;
+  selectedFurnitureColor?: string | null;
+  onSelectedFurnitureColorChange: (color: string) => void;
   onRequestExit: () => void;
 }
 
@@ -56,6 +59,9 @@ export default function Sidebar({
   renamingProject,
   furnitureLibrary,
   addFurnitureToRoom,
+  selectedFurnitureName,
+  selectedFurnitureColor,
+  onSelectedFurnitureColorChange,
   onRequestExit,
 }: SidebarProps) {
   const [editingProjectName, setEditingProjectName] = useState(false);
@@ -232,6 +238,46 @@ export default function Sidebar({
               </button>
             </div>
 
+        <div className="p-5 bg-white/60 border border-white/80 rounded-2xl shadow-sm space-y-4">
+          <h3 className="text-xs font-bold text-gray-900 uppercase tracking-widest flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            Selected Furniture
+          </h3>
+
+          {!selectedFurnitureName ? (
+            <p className="text-xs font-semibold text-gray-500">
+              Select a furniture item on the canvas to customize its color.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm font-extrabold text-gray-900 truncate">
+                {selectedFurnitureName}
+              </p>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">
+                  Color
+                </label>
+                <div className="flex items-center gap-2 p-1.5 bg-white border border-gray-200 rounded-xl shadow-sm focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-500 transition-all">
+                  <input
+                    type="color"
+                    value={selectedFurnitureColor || "#64748b"}
+                    onChange={(e) => onSelectedFurnitureColorChange(e.target.value)}
+                    className="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-none [&::-webkit-color-swatch]:rounded-[6px] shadow-sm flex-shrink-0"
+                  />
+                  <input
+                    type="text"
+                    value={selectedFurnitureColor || "#64748b"}
+                    onChange={(e) => onSelectedFurnitureColorChange(e.target.value)}
+                    placeholder="#64748B"
+                    maxLength={7}
+                    className="w-full bg-transparent border-none text-gray-900 text-sm font-semibold focus:outline-none uppercase"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* ROOM AESTHETICS CONTROLS */}
         <div className="p-5 bg-white/60 border border-white/80 rounded-2xl shadow-sm space-y-4">
           <h3 className="text-xs font-bold text-gray-900 uppercase tracking-widest flex items-center gap-2">
@@ -406,7 +452,7 @@ export default function Sidebar({
                             />
                             <p className="text-sm font-extrabold text-gray-900">{item.name}</p>
                             <p className="text-xs font-semibold text-gray-500 capitalize">
-                              {item.widthInches}" × {item.depthInches}"
+                              {item.widthInches}&quot; × {item.depthInches}&quot;
                             </p>
                           </button>
                         ))}

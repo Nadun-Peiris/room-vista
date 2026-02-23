@@ -90,8 +90,10 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error("Save design error:", error);
+    const details =
+      error instanceof Error ? error.message : "Unknown server error";
     return NextResponse.json(
-      { error: "Failed to save design" },
+      { error: "Failed to save design", details },
       { status: 500 }
     );
   }
