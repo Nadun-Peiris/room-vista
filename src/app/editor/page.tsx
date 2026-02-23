@@ -7,6 +7,7 @@ import type { KonvaEventObject } from "konva/lib/Node";
 import { useRouter, useSearchParams } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import FeedbackDialog from "@/components/FeedbackDialog";
 
 // Import your new Sidebar component (Adjust the path as needed based on your folder structure)
 import Sidebar from "./Sidebar"; 
@@ -26,6 +27,7 @@ type FurnitureItem = {
   fill: string;
   rotation: number;
   heightFeet?: number;
+  shadeIntensity?: number;
   type?: string;
   modelUrl?: string;
 };
@@ -66,6 +68,13 @@ type FurnitureApiItem = {
   modelUrl?: string;
   thumbnailUrl?: string;
 };
+
+type FurnitureSnapshot = {
+  furniture: FurnitureItem[];
+  selectedId: string | null;
+};
+
+const cloneFurnitureItems = (items: FurnitureItem[]) => items.map((item) => ({ ...item }));
 
 const serializeDesignSnapshot = ({
   title,
@@ -112,6 +121,7 @@ const sanitizeFurnitureForSave = (items: FurnitureItem[]): FurnitureItem[] =>
       rotation: Number.isFinite(item.rotation) ? item.rotation : 0,
       ...(typeof item.type === "string" ? { type: item.type } : {}),
       ...(Number.isFinite(item.heightFeet) ? { heightFeet: item.heightFeet } : {}),
+      ...(Number.isFinite(item.shadeIntensity) ? { shadeIntensity: item.shadeIntensity } : {}),
       ...(typeof item.modelUrl === "string" ? { modelUrl: item.modelUrl } : {}),
     }))
     .filter((item) => item.width > 0 && item.height > 0);
@@ -260,6 +270,7 @@ function EditorPageContent() {
     const heightPx = item.depthInches * PIXELS_PER_INCH;
     const spacing = 10;
     const step = 20;
+    const beforeSnapshot = createSnapshot();
 
     setFurniture((prev) => {
       const maxX = Math.max(0, STAGE_WIDTH - widthPx);
@@ -310,11 +321,13 @@ function EditorPageContent() {
           fill: item.defaultColor,
           rotation: 0,
           heightFeet: item.heightFeet,
+          shadeIntensity: 0.5,
           type: item.id,
           modelUrl: item.modelUrl,
         },
       ];
     });
+    pushUndoSnapshot(beforeSnapshot);
   };
 
   /* ---------------- ROOM SIZE STATE ---------------- */
@@ -347,14 +360,71 @@ function EditorPageContent() {
   const [projectName, setProjectName] = useState(initialProjectName || "Untitled Design");
   const [showNamePopup, setShowNamePopup] = useState(!designId && !initialProjectName);
   const [newProjectNameInput, setNewProjectNameInput] = useState(initialProjectName);
-  const [showSaveSuccessPopup, setShowSaveSuccessPopup] = useState(false);
-  const [saveSuccessMessage, setSaveSuccessMessage] = useState("Design saved successfully!");
+  const [feedbackPopup, setFeedbackPopup] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+  }>({ open: false, title: "", message: "" });
   const [showExitConfirmPopup, setShowExitConfirmPopup] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
   const [renamingProject, setRenamingProject] = useState(false);
   const [liveRotation, setLiveRotation] = useState<{ id: string; angle: number } | null>(null);
   const shapeRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
+  const undoStackRef = useRef<FurnitureSnapshot[]>([]);
+  const redoStackRef = useRef<FurnitureSnapshot[]>([]);
+  const [, setHistoryTick] = useState(0);
+  const openFeedbackPopup = useCallback((title: string, message: string) => {
+    setFeedbackPopup({ open: true, title, message });
+  }, []);
+  const createSnapshot = useCallback(
+    (): FurnitureSnapshot => ({
+      furniture: cloneFurnitureItems(furniture),
+      selectedId,
+    }),
+    [furniture, selectedId]
+  );
+  const clearHistory = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    setHistoryTick((v) => v + 1);
+  }, []);
+  const pushUndoSnapshot = useCallback((snapshot: FurnitureSnapshot) => {
+    const nextUndo = [...undoStackRef.current, snapshot];
+    if (nextUndo.length > 100) nextUndo.shift();
+    undoStackRef.current = nextUndo;
+    redoStackRef.current = [];
+    setHistoryTick((v) => v + 1);
+  }, []);
+  const applySnapshot = useCallback((snapshot: FurnitureSnapshot) => {
+    setFurniture(cloneFurnitureItems(snapshot.furniture));
+    setSelectedId(snapshot.selectedId);
+    setLiveRotation(null);
+  }, []);
+  const handleUndo = useCallback(() => {
+    const previous = undoStackRef.current.at(-1);
+    if (!previous) return;
+    const current = createSnapshot();
+    undoStackRef.current = undoStackRef.current.slice(0, -1);
+    const nextRedo = [...redoStackRef.current, current];
+    if (nextRedo.length > 100) nextRedo.shift();
+    redoStackRef.current = nextRedo;
+    applySnapshot(previous);
+    setHistoryTick((v) => v + 1);
+  }, [applySnapshot, createSnapshot]);
+  const handleRedo = useCallback(() => {
+    const next = redoStackRef.current.at(-1);
+    if (!next) return;
+    const current = createSnapshot();
+    redoStackRef.current = redoStackRef.current.slice(0, -1);
+    const nextUndo = [...undoStackRef.current, current];
+    if (nextUndo.length > 100) nextUndo.shift();
+    undoStackRef.current = nextUndo;
+    applySnapshot(next);
+    setHistoryTick((v) => v + 1);
+  }, [applySnapshot, createSnapshot]);
+  const canUndo = undoStackRef.current.length > 0;
+  const canRedo = redoStackRef.current.length > 0;
 
   const handleRoomWidthFeetChange = (value: number) => {
     const safeValue = value || 0;
@@ -486,6 +556,7 @@ function EditorPageContent() {
 
         if (!res.ok) {
           console.error("Failed to load design");
+          openFeedbackPopup("Load Failed", "Unable to load this design right now.");
           return;
         }
 
@@ -507,6 +578,7 @@ function EditorPageContent() {
         setLightIntensity(typeof data.lightIntensity === "number" ? data.lightIntensity : 1);
         setCurrentDesignId(data._id);
         setSelectedId(null);
+        clearHistory();
         setLastSavedSnapshot(
           serializeDesignSnapshot({
             title: data.title?.trim() || "Untitled Design",
@@ -523,6 +595,7 @@ function EditorPageContent() {
         );
       } catch (error) {
         console.error("Load design error:", error);
+        openFeedbackPopup("Load Failed", "Unable to load this design right now.");
       }
     };
 
@@ -535,7 +608,7 @@ function EditorPageContent() {
       isMounted = false;
       unsubscribe();
     };
-  }, [designId]);
+  }, [clearHistory, designId, openFeedbackPopup]);
 
   useEffect(() => {
     let isMounted = true;
@@ -587,6 +660,10 @@ function EditorPageContent() {
         unsubscribe = authModule.onAuthStateChanged(firebase.auth, loadFurnitureForUser);
       } catch (error) {
         console.error("Load furniture library error:", error);
+        openFeedbackPopup(
+          "Library Load Failed",
+          "Unable to load furniture library. Please refresh and try again."
+        );
       }
     };
 
@@ -596,7 +673,7 @@ function EditorPageContent() {
       isMounted = false;
       unsubscribe?.();
     };
-  }, []);
+  }, [openFeedbackPopup]);
 
   const checkDeselect = (e: KonvaEventObject<PointerEvent>) => {
     const clickedOnEmpty = e.target === e.target.getStage();
@@ -607,9 +684,11 @@ function EditorPageContent() {
 
   const handleDeleteSelected = () => {
     if (!selectedId) return;
+    const beforeSnapshot = createSnapshot();
     setFurniture((prev) => prev.filter((item) => item.id !== selectedId));
     setSelectedId(null);
     setLiveRotation(null);
+    pushUndoSnapshot(beforeSnapshot);
   };
 
   const selectedFurniture = useMemo(
@@ -619,6 +698,9 @@ function EditorPageContent() {
 
   const handleSelectedFurnitureColorChange = useCallback((color: string) => {
     if (!selectedId) return;
+    const selected = furniture.find((item) => item.id === selectedId);
+    if (!selected || selected.fill === color) return;
+    const beforeSnapshot = createSnapshot();
     setFurniture((prev) =>
       prev.map((item) =>
         item.id === selectedId
@@ -626,13 +708,28 @@ function EditorPageContent() {
           : item
       )
     );
-  }, [selectedId]);
+    pushUndoSnapshot(beforeSnapshot);
+  }, [createSnapshot, furniture, pushUndoSnapshot, selectedId]);
+
+  const handleSelectedFurnitureShadeChange = useCallback((shade: number) => {
+    if (!selectedId) return;
+    const clampedShade = Math.max(0, Math.min(1, shade));
+    const selected = furniture.find((item) => item.id === selectedId);
+    const selectedShade = typeof selected?.shadeIntensity === "number" ? selected.shadeIntensity : 0.5;
+    if (!selected || selectedShade === clampedShade) return;
+    const beforeSnapshot = createSnapshot();
+    setFurniture((prev) =>
+      prev.map((item) =>
+        item.id === selectedId
+          ? { ...item, shadeIntensity: clampedShade }
+          : item
+      )
+    );
+    pushUndoSnapshot(beforeSnapshot);
+  }, [createSnapshot, furniture, pushUndoSnapshot, selectedId]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!selectedId) return;
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
-
       const target = e.target as HTMLElement | null;
       const isTypingTarget =
         target instanceof HTMLInputElement ||
@@ -640,15 +737,38 @@ function EditorPageContent() {
         target?.isContentEditable;
       if (isTypingTarget) return;
 
+      const key = e.key.toLowerCase();
+      const isMetaOrCtrl = e.metaKey || e.ctrlKey;
+      if (isMetaOrCtrl && key === "z" && e.shiftKey) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+      if (isMetaOrCtrl && key === "z") {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+      if (e.ctrlKey && key === "y") {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      if (!selectedId) return;
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+
       e.preventDefault();
+      const beforeSnapshot = createSnapshot();
       setFurniture((prev) => prev.filter((item) => item.id !== selectedId));
       setSelectedId(null);
       setLiveRotation(null);
+      pushUndoSnapshot(beforeSnapshot);
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedId]);
+  }, [createSnapshot, handleRedo, handleUndo, pushUndoSnapshot, selectedId]);
 
   const handleSaveDesign = async ({ showSuccessPopup = true }: { showSuccessPopup?: boolean } = {}) => {
     try {
@@ -737,14 +857,18 @@ function EditorPageContent() {
       );
 
       if (showSuccessPopup) {
-        setSaveSuccessMessage(
+        openFeedbackPopup(
+          "Project Saved",
           isUpdate ? "Design updated successfully!" : "Design saved successfully!"
         );
-        setShowSaveSuccessPopup(true);
       }
       return true;
     } catch (error) {
       console.error("Save error:", error);
+      openFeedbackPopup(
+        "Save Failed",
+        error instanceof Error ? error.message : "Failed to save design."
+      );
       return false;
     } finally {
       setSaving(false);
@@ -804,7 +928,11 @@ function EditorPageContent() {
       });
 
       if (!res.ok) {
-        alert("Failed to update project name.");
+        setFeedbackPopup({
+          open: true,
+          title: "Rename Failed",
+          message: "Failed to update project name.",
+        });
         return;
       }
 
@@ -826,7 +954,11 @@ function EditorPageContent() {
       );
     } catch (error) {
       console.error("Rename project error:", error);
-      alert("Failed to update project name.");
+      setFeedbackPopup({
+        open: true,
+        title: "Rename Failed",
+        message: "Failed to update project name.",
+      });
     } finally {
       setRenamingProject(false);
     }
@@ -907,14 +1039,24 @@ function EditorPageContent() {
             : "Selected Furniture"
           : null}
         selectedFurnitureColor={selectedFurniture?.fill ?? null}
+        selectedFurnitureShade={
+          typeof selectedFurniture?.shadeIntensity === "number"
+            ? selectedFurniture.shadeIntensity
+            : null
+        }
         onSelectedFurnitureColorChange={handleSelectedFurnitureColorChange}
+        onSelectedFurnitureShadeChange={handleSelectedFurnitureShadeChange}
         onRequestExit={handleRequestExit}
       />
 
       {/* CANVAS AREA */}
       <div 
         className="relative z-10 flex-1 min-w-0 min-h-0 p-6 md:p-8"
-        onClick={() => setSelectedId(null)}
+        onClick={() => {
+          if (viewMode === "2d") {
+            setSelectedId(null);
+          }
+        }}
       >
         {/* Outer Container: Rounded corners and glass shadow */}
         <div className="h-full w-full bg-white/90 backdrop-blur-sm border border-white/80 shadow-[0_20px_50px_rgba(0,0,0,0.05)] rounded-[2rem] overflow-hidden flex flex-col">
@@ -960,6 +1102,32 @@ function EditorPageContent() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleUndo}
+                disabled={!canUndo}
+                className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-emerald-300 hover:text-emerald-700 transition disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed"
+                aria-label="Undo"
+                title="Undo (Ctrl/Cmd+Z)"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.3" d="M9 14L4 9l5-5" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.3" d="M20 19v-4a6 6 0 00-6-6H4" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={handleRedo}
+                disabled={!canRedo}
+                className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 hover:border-emerald-300 hover:text-emerald-700 transition disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed"
+                aria-label="Redo"
+                title="Redo (Ctrl+Y / Cmd+Shift+Z)"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.3" d="M15 14l5-5-5-5" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.3" d="M4 19v-4a6 6 0 016-6h10" />
+                </svg>
+              </button>
               {selectedId && (
                 <button
                   type="button"
@@ -1097,6 +1265,14 @@ function EditorPageContent() {
                     scaleY={clampedZoom}
                     className="cursor-crosshair"
                     onPointerDown={checkDeselect}
+                    onContextMenu={(e) => {
+                      e.evt.preventDefault();
+                      const clickedOnEmpty = e.target === e.target.getStage();
+                      if (clickedOnEmpty) {
+                        setSelectedId(null);
+                        setLiveRotation(null);
+                      }
+                    }}
                   >
                     <Layer>
                     {/* ROOM FLOOR */}
@@ -1188,6 +1364,11 @@ function EditorPageContent() {
                           e.cancelBubble = true;
                           setSelectedId(item.id);
                         }}
+                        onContextMenu={(e) => {
+                          e.evt.preventDefault();
+                          e.cancelBubble = true;
+                          setSelectedId(item.id);
+                        }}
                         onTransformStart={(e) => {
                           const node = e.target as Konva.Rect;
                           setLiveRotation({ id: item.id, angle: node.rotation() });
@@ -1223,17 +1404,24 @@ function EditorPageContent() {
                             return;
                           }
 
+                          const snappedX = snapToGrid(bounded.x);
+                          const snappedY = snapToGrid(bounded.y);
+                          if (item.x === snappedX && item.y === snappedY) return;
+
+                          const beforeSnapshot = createSnapshot();
+
                           setFurniture((prev) =>
                             prev.map((f) =>
                               f.id === item.id
                                 ? {
                                     ...f,
-                                    x: snapToGrid(bounded.x),
-                                    y: snapToGrid(bounded.y),
+                                    x: snappedX,
+                                    y: snappedY,
                                   }
                                 : f
                             )
                           );
+                          pushUndoSnapshot(beforeSnapshot);
                         }}
 
                         onTransformEnd={() => {
@@ -1277,6 +1465,19 @@ function EditorPageContent() {
                             return;
                           }
 
+                          if (
+                            item.x === newX &&
+                            item.y === newY &&
+                            item.width === newWidth &&
+                            item.height === newHeight &&
+                            item.rotation === rotation
+                          ) {
+                            setLiveRotation(null);
+                            return;
+                          }
+
+                          const beforeSnapshot = createSnapshot();
+
                           setFurniture((prev) =>
                             prev.map((f) =>
                               f.id === item.id
@@ -1291,6 +1492,7 @@ function EditorPageContent() {
                                 : f
                             )
                           );
+                          pushUndoSnapshot(beforeSnapshot);
                           setLiveRotation(null);
                         }}
                       />
@@ -1360,6 +1562,8 @@ function EditorPageContent() {
                 wallColor={wallColor}
                 floorColor={floorColor}
                 lightIntensity={lightIntensity}
+                selectedFurnitureId={selectedId}
+                onSelectFurniture={setSelectedId}
                 pixelsPerFoot={PIXELS_PER_INCH * 12}
               />
             )}
@@ -1403,23 +1607,12 @@ function EditorPageContent() {
         </div>
       )}
 
-      {showSaveSuccessPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
-            <h3 className="text-lg font-extrabold text-gray-900">Project Saved</h3>
-            <p className="mt-2 text-sm text-gray-600">{saveSuccessMessage}</p>
-            <div className="mt-6 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowSaveSuccessPopup(false)}
-                className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <FeedbackDialog
+        open={feedbackPopup.open}
+        title={feedbackPopup.title}
+        message={feedbackPopup.message}
+        onClose={() => setFeedbackPopup({ open: false, title: "", message: "" })}
+      />
 
       {showExitConfirmPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">

@@ -10,6 +10,7 @@ const FurnitureItemSchema = new Schema(
     width: { type: Number },
     height: { type: Number },
     heightFeet: { type: Number },
+    shadeIntensity: { type: Number, min: 0, max: 1 },
     fill: { type: String },
     rotation: { type: Number },
     modelUrl: { type: String },

@@ -35,7 +35,9 @@ interface SidebarProps {
   addFurnitureToRoom: (item: FurnitureLibraryItem) => void;
   selectedFurnitureName?: string | null;
   selectedFurnitureColor?: string | null;
+  selectedFurnitureShade?: number | null;
   onSelectedFurnitureColorChange: (color: string) => void;
+  onSelectedFurnitureShadeChange: (shade: number) => void;
   onRequestExit: () => void;
 }
 
@@ -61,7 +63,9 @@ export default function Sidebar({
   addFurnitureToRoom,
   selectedFurnitureName,
   selectedFurnitureColor,
+  selectedFurnitureShade,
   onSelectedFurnitureColorChange,
+  onSelectedFurnitureShadeChange,
   onRequestExit,
 }: SidebarProps) {
   const [editingProjectName, setEditingProjectName] = useState(false);
@@ -272,6 +276,25 @@ export default function Sidebar({
                     maxLength={7}
                     className="w-full bg-transparent border-none text-gray-900 text-sm font-semibold focus:outline-none uppercase"
                   />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">
+                  Shading
+                </label>
+                <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={typeof selectedFurnitureShade === "number" ? selectedFurnitureShade : 0.5}
+                    onChange={(e) => onSelectedFurnitureShadeChange(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="mt-1 text-xs font-semibold text-gray-500">
+                    {(typeof selectedFurnitureShade === "number" ? selectedFurnitureShade : 0.5).toFixed(2)}
+                  </div>
                 </div>
               </div>
             </div>

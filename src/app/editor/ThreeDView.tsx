@@ -3,16 +3,170 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Grid, ContactShadows } from "@react-three/drei";
-import { Box3, Color, Vector3, type Material, type Mesh, type Object3D } from "three";
+import { Box3, Color, Group, Vector3, type Material, type Mesh, type Object3D } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
-const ORIENTATION_STEPS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+const Y_ORIENTATION_STEPS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
 type ColorableMaterial = Material & { color: Color };
 
 const isColorableMaterial = (material: Material): material is ColorableMaterial =>
   "color" in material && material.color instanceof Color;
+
+const getMeshBounds = (object: Object3D) => {
+  const bounds = new Box3();
+  let hasMesh = false;
+
+  object.updateMatrixWorld(true);
+  object.traverse((node) => {
+    const mesh = node as Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+
+    if (!mesh.geometry.boundingBox) {
+      mesh.geometry.computeBoundingBox();
+    }
+
+    const geometryBounds = mesh.geometry.boundingBox;
+    if (!geometryBounds) return;
+
+    const transformed = geometryBounds.clone();
+    transformed.applyMatrix4(mesh.matrixWorld);
+    bounds.union(transformed);
+    hasMesh = true;
+  });
+
+  return hasMesh ? bounds : null;
+};
+
+const getLowestMeshY = (object: Object3D) => {
+  let lowestY = Number.POSITIVE_INFINITY;
+  const vertex = new Vector3();
+  object.updateMatrixWorld(true);
+
+  object.traverse((node) => {
+    const mesh = node as Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const position = mesh.geometry.getAttribute("position");
+    if (!position) return;
+
+    const stride = Math.max(1, Math.ceil(position.count / 3000));
+    for (let i = 0; i < position.count; i += stride) {
+      vertex.set(position.getX(i), position.getY(i), position.getZ(i));
+      vertex.applyMatrix4(mesh.matrixWorld);
+      if (vertex.y < lowestY) lowestY = vertex.y;
+    }
+  });
+
+  return Number.isFinite(lowestY) ? lowestY : 0;
+};
+
+const flattenSceneMeshes = (scene: Object3D) => {
+  const flatGroup = new Group();
+  scene.updateMatrixWorld(true);
+
+  scene.traverse((node) => {
+    const mesh = node as Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+
+    const flatMesh = mesh.clone();
+    flatMesh.geometry = mesh.geometry.clone();
+    flatMesh.geometry.applyMatrix4(mesh.matrixWorld);
+    flatMesh.position.set(0, 0, 0);
+    flatMesh.rotation.set(0, 0, 0);
+    flatMesh.scale.set(1, 1, 1);
+    flatMesh.updateMatrixWorld(true);
+    flatGroup.add(flatMesh);
+  });
+
+  return flatGroup.children.length > 0 ? flatGroup : (scene.clone(true) as Object3D);
+};
+
+const collectMeshPoints = (object: Object3D, maxPoints = 4000) => {
+  const points: Array<[number, number, number]> = [];
+  object.updateMatrixWorld(true);
+
+  object.traverse((node) => {
+    if (points.length >= maxPoints) return;
+    const mesh = node as Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const position = mesh.geometry.getAttribute("position");
+    if (!position) return;
+
+    const stride = Math.max(1, Math.ceil(position.count / 1200));
+    for (let i = 0; i < position.count && points.length < maxPoints; i += stride) {
+      const x = position.getX(i);
+      const y = position.getY(i);
+      const z = position.getZ(i);
+      points.push([x, y, z]);
+    }
+  });
+
+  return points;
+};
+
+const estimateSupportTilt = (points: Array<[number, number, number]>) => {
+  if (points.length < 12) {
+    return { tiltX: 0, tiltZ: 0 };
+  }
+
+  const center = [0, 0, 0] as [number, number, number];
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const [x, y, z] of points) {
+    center[0] += x;
+    center[1] += y;
+    center[2] += z;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  center[0] /= points.length;
+  center[1] /= points.length;
+  center[2] /= points.length;
+
+  const centered = points.map(([x, y, z]) => [x - center[0], y - center[1], z - center[2]] as [number, number, number]);
+  const epsilon = Math.max(0.002, (maxY - minY) * 0.008);
+
+  let bestTiltX = 0;
+  let bestTiltZ = 0;
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (let rxDeg = -18; rxDeg <= 18; rxDeg += 3) {
+    const rx = (rxDeg * Math.PI) / 180;
+    const cosX = Math.cos(rx);
+    const sinX = Math.sin(rx);
+
+    for (let rzDeg = -18; rzDeg <= 18; rzDeg += 3) {
+      const rz = (rzDeg * Math.PI) / 180;
+      const cosZ = Math.cos(rz);
+      const sinZ = Math.sin(rz);
+
+      let localMinY = Number.POSITIVE_INFINITY;
+      for (const [x, y, z] of centered) {
+        const y1 = y * cosX - z * sinX;
+        const y2 = x * sinZ + y1 * cosZ;
+        if (y2 < localMinY) localMinY = y2;
+      }
+
+      let supportCount = 0;
+      for (const [x, y, z] of centered) {
+        const y1 = y * cosX - z * sinX;
+        const y2 = x * sinZ + y1 * cosZ;
+        if (Math.abs(y2 - localMinY) <= epsilon) supportCount += 1;
+      }
+
+      const anglePenalty = (Math.abs(rxDeg) + Math.abs(rzDeg)) * 0.45;
+      const score = supportCount - anglePenalty;
+      if (score > bestScore) {
+        bestScore = score;
+        bestTiltX = rx;
+        bestTiltZ = rz;
+      }
+    }
+  }
+
+  return { tiltX: bestTiltX, tiltZ: bestTiltZ };
+};
 
 interface ThreeDProps {
   roomWidthFeet: number;
@@ -23,6 +177,8 @@ interface ThreeDProps {
   wallColor: string;
   floorColor: string;
   lightIntensity: number;
+  selectedFurnitureId?: string | null;
+  onSelectFurniture?: (id: string | null) => void;
   zoom?: number;
   pixelsPerFoot?: number;
 }
@@ -42,6 +198,7 @@ interface FurnitureItem3D {
   fill: string;
   rotation: number;
   heightFeet?: number;
+  shadeIntensity?: number;
   type?: string;
   modelUrl?: string;
 }
@@ -55,6 +212,8 @@ export default function ThreeDView({
   wallColor,
   floorColor,
   lightIntensity,
+  selectedFurnitureId = null,
+  onSelectFurniture,
   zoom = 1,
   pixelsPerFoot = 60,
 }: ThreeDProps) {
@@ -70,7 +229,11 @@ export default function ThreeDView({
 
   return (
     <div className="w-full h-full bg-gray-50/50">
-      <Canvas shadows camera={{ position: [15, 15, 15], fov: 50 }}>
+      <Canvas
+        shadows
+        camera={{ position: [15, 15, 15], fov: 50 }}
+        onPointerMissed={() => onSelectFurniture?.(null)}
+      >
         <color attach="background" args={["#f8fafc"]} />
         
         {/* LIGHTING - Soft architectural studio lighting */}
@@ -130,8 +293,15 @@ export default function ThreeDView({
                 : 1;
 
           // Convert 2D top-left pixel coordinates into centered 3D feet coordinates.
-          const xPos = (item.x + widthPx / 2) / pixelsPerFoot - roomWidth / 2;
-          const zPos = (item.y + depthPx / 2) / pixelsPerFoot - roomLength / 2;
+          // Konva rotates around the rect origin (top-left), so convert to rotated center first.
+          const theta = (item.rotation * Math.PI) / 180;
+          const localCenterX = widthPx / 2;
+          const localCenterY = depthPx / 2;
+          const rotatedCenterX = item.x + localCenterX * Math.cos(theta) - localCenterY * Math.sin(theta);
+          const rotatedCenterY = item.y + localCenterX * Math.sin(theta) + localCenterY * Math.cos(theta);
+
+          const xPos = rotatedCenterX / pixelsPerFoot - roomWidth / 2;
+          const zPos = rotatedCenterY / pixelsPerFoot - roomLength / 2;
           const widthFeet = widthPx / pixelsPerFoot;
           const depthFeet = depthPx / pixelsPerFoot;
           
@@ -140,12 +310,23 @@ export default function ThreeDView({
               key={item.id}
               position={[xPos, roomBaseY, zPos]}
               rotation={[0, -item.rotation * Math.PI / 180, 0]}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectFurniture?.(item.id);
+              }}
             >
+              {selectedFurnitureId === item.id && (
+                <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                  <planeGeometry args={[widthFeet, depthFeet]} />
+                  <meshBasicMaterial color="#10b981" transparent opacity={0.2} depthWrite={false} />
+                </mesh>
+              )}
               <FurnitureAsset
                 modelUrl={modelUrl}
                 widthFeet={widthFeet}
                 depthFeet={depthFeet}
                 heightFeet={itemHeightFeet}
+                shadeIntensity={typeof item.shadeIntensity === "number" ? item.shadeIntensity : 0.5}
                 color={item.fill || "#64748b"}
               />
             </group>
@@ -164,12 +345,14 @@ function FurnitureAsset({
   widthFeet,
   depthFeet,
   heightFeet,
+  shadeIntensity,
   color,
 }: {
   modelUrl?: string;
   widthFeet: number;
   depthFeet: number;
   heightFeet: number;
+  shadeIntensity: number;
   color: string;
 }) {
   const FLOOR_SNAP_OFFSET = 0.02;
@@ -212,47 +395,46 @@ function FurnitureAsset({
       return null;
     }
 
-    const cloned = sourceScene.clone(true);
+    const sourceClone = sourceScene.clone(true);
+    const cloned = flattenSceneMeshes(sourceClone);
     const tintColor = new Color(color);
+    const clampedShade = Math.max(0, Math.min(1, shadeIntensity));
 
-    // Auto-orient imported assets (e.g., Z-up exports) to match target width/depth/height.
-    let bestRotation: [number, number, number] = [0, 0, 0];
+    // Keep furniture upright. Correct obvious Z-up assets once, then only rotate around Y.
+    let bestYRotation = 0;
     let bestScore = Number.POSITIVE_INFINITY;
+    cloned.rotation.set(0, 0, 0);
+    cloned.updateMatrixWorld(true);
+    const sampledPoints = collectMeshPoints(cloned);
+    const { tiltX, tiltZ } = estimateSupportTilt(sampledPoints);
+    const baseXRotation = tiltX;
+    const baseZRotation = tiltZ;
+    cloned.rotation.set(baseXRotation, 0, baseZRotation);
+    cloned.updateMatrixWorld(true);
+
     const targetWidthDepthRatio = widthFeet / Math.max(depthFeet, 1e-3);
-    const targetHeightRatio = heightFeet / Math.max((widthFeet + depthFeet) / 2, 1e-3);
 
-    for (const rx of ORIENTATION_STEPS) {
-      for (const ry of ORIENTATION_STEPS) {
-        for (const rz of ORIENTATION_STEPS) {
-          cloned.rotation.set(rx, ry, rz);
-          cloned.updateMatrixWorld(true);
+    for (const ry of Y_ORIENTATION_STEPS) {
+      cloned.rotation.set(baseXRotation, ry, baseZRotation);
+      cloned.updateMatrixWorld(true);
 
-          const candidateBounds = new Box3().setFromObject(cloned);
-          const candidateSize = candidateBounds.getSize(new Vector3());
-          const sizeX = Math.max(candidateSize.x, 1e-3);
-          const sizeY = Math.max(candidateSize.y, 1e-3);
-          const sizeZ = Math.max(candidateSize.z, 1e-3);
+      const candidateBounds = getMeshBounds(cloned) ?? new Box3().setFromObject(cloned);
+      const candidateSize = candidateBounds.getSize(new Vector3());
+      const sizeX = Math.max(candidateSize.x, 1e-3);
+      const sizeZ = Math.max(candidateSize.z, 1e-3);
 
-          const widthDepthRatio = sizeX / sizeZ;
-          const heightRatio = sizeY / Math.max((sizeX + sizeZ) / 2, 1e-3);
-          const ratioScore =
-            Math.abs(Math.log(widthDepthRatio / targetWidthDepthRatio)) +
-            Math.abs(Math.log(heightRatio / targetHeightRatio));
+      const widthDepthRatio = sizeX / sizeZ;
+      const ratioScore = Math.abs(Math.log(widthDepthRatio / targetWidthDepthRatio));
+      const rotationPenalty = ry !== 0 ? 0.002 : 0;
+      const score = ratioScore + rotationPenalty;
 
-          // Light tie-breaker so we don't rotate unnecessarily when multiple fits are similar.
-          const rotationPenalty =
-            (rx !== 0 ? 0.005 : 0) + (rz !== 0 ? 0.005 : 0) + (ry !== 0 ? 0.001 : 0);
-          const score = ratioScore + rotationPenalty;
-
-          if (score < bestScore) {
-            bestScore = score;
-            bestRotation = [rx, ry, rz];
-          }
-        }
+      if (score < bestScore) {
+        bestScore = score;
+        bestYRotation = ry;
       }
     }
 
-    cloned.rotation.set(bestRotation[0], bestRotation[1], bestRotation[2]);
+    cloned.rotation.set(baseXRotation, bestYRotation, baseZRotation);
     cloned.updateMatrixWorld(true);
 
     cloned.traverse((node) => {
@@ -268,6 +450,13 @@ function FurnitureAsset({
           if (isColorableMaterial(next)) {
             next.color = next.color.clone();
             next.color.lerp(tintColor, 0.85);
+            next.color.multiplyScalar(1 - clampedShade * 0.18);
+          }
+          if ("roughness" in next && typeof next.roughness === "number") {
+            next.roughness = Math.max(0.1, Math.min(1, 0.95 - clampedShade * 0.6));
+          }
+          if ("metalness" in next && typeof next.metalness === "number") {
+            next.metalness = Math.max(0, Math.min(1, 0.05 + clampedShade * 0.2));
           }
           return next;
         });
@@ -276,20 +465,27 @@ function FurnitureAsset({
         if (isColorableMaterial(next)) {
           next.color = next.color.clone();
           next.color.lerp(tintColor, 0.85);
+          next.color.multiplyScalar(1 - clampedShade * 0.18);
+        }
+        if ("roughness" in next && typeof next.roughness === "number") {
+          next.roughness = Math.max(0.1, Math.min(1, 0.95 - clampedShade * 0.6));
+        }
+        if ("metalness" in next && typeof next.metalness === "number") {
+          next.metalness = Math.max(0, Math.min(1, 0.05 + clampedShade * 0.2));
         }
         mesh.material = next;
       }
     });
 
     // 1) Ground + center the source model in local space.
-    const baseBounds = new Box3().setFromObject(cloned);
+    const baseBounds = getMeshBounds(cloned) ?? new Box3().setFromObject(cloned);
     const baseCenter = baseBounds.getCenter(new Vector3());
     cloned.position.x -= baseCenter.x;
     cloned.position.z -= baseCenter.z;
     cloned.position.y -= baseBounds.min.y;
 
     // 2) Compute size after centering and scale to requested footprint/height.
-    const centeredBounds = new Box3().setFromObject(cloned);
+    const centeredBounds = getMeshBounds(cloned) ?? new Box3().setFromObject(cloned);
     const centeredSize = centeredBounds.getSize(new Vector3());
     const safeX = centeredSize.x > 0 ? centeredSize.x : 1;
     const safeY = centeredSize.y > 0 ? centeredSize.y : 1;
@@ -305,17 +501,25 @@ function FurnitureAsset({
     );
 
     // 3) Re-ground after scaling to eliminate any float caused by transforms.
-    const finalBounds = new Box3().setFromObject(cloned);
-    cloned.position.y -= finalBounds.min.y + FLOOR_SNAP_OFFSET;
+    const lowestYFirstPass = getLowestMeshY(cloned);
+    cloned.position.y -= lowestYFirstPass + FLOOR_SNAP_OFFSET;
+
+    // One more pass after translation to remove residual float from sampled bounds.
+    const lowestYSecondPass = getLowestMeshY(cloned);
+    cloned.position.y -= lowestYSecondPass + FLOOR_SNAP_OFFSET;
 
     return cloned;
-  }, [modelUrl, sourceScene, widthFeet, heightFeet, depthFeet, color]);
+  }, [modelUrl, sourceScene, widthFeet, heightFeet, depthFeet, shadeIntensity, color]);
 
   if (!preparedModel || !modelUrl || failedUrl === modelUrl) {
     return (
       <mesh position={[0, heightFeet / 2 - FLOOR_SNAP_OFFSET, 0]} castShadow receiveShadow>
         <boxGeometry args={[widthFeet, heightFeet, depthFeet]} />
-        <meshStandardMaterial color={color} roughness={0.3} />
+        <meshStandardMaterial
+          color={color}
+          roughness={Math.max(0.1, Math.min(1, 0.95 - shadeIntensity * 0.6))}
+          metalness={Math.max(0, Math.min(1, 0.05 + shadeIntensity * 0.2))}
+        />
       </mesh>
     );
   }

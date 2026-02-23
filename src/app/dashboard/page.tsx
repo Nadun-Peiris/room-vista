@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
+import FeedbackDialog from "@/components/FeedbackDialog";
 
 type DashboardDesign = {
   _id: string;
@@ -27,6 +28,11 @@ export default function DashboardPage() {
   const [selectedDesignIds, setSelectedDesignIds] = useState<string[]>([]);
   const [showDeletePopup, setShowDeletePopup] = useState(false);
   const [showNewDesignPopup, setShowNewDesignPopup] = useState(false);
+  const [feedbackPopup, setFeedbackPopup] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+  }>({ open: false, title: "", message: "" });
   const [newDesignName, setNewDesignName] = useState("");
   const [editingDesignId, setEditingDesignId] = useState<string | null>(null);
   const [editingDesignTitle, setEditingDesignTitle] = useState("");
@@ -123,7 +129,11 @@ export default function DashboardPage() {
 
       const failed = results.filter((item) => !item.ok);
       if (failed.length > 0) {
-        alert("Some designs could not be deleted. Please try again.");
+        setFeedbackPopup({
+          open: true,
+          title: "Delete Incomplete",
+          message: "Some designs could not be deleted. Please try again.",
+        });
         return;
       }
 
@@ -133,9 +143,18 @@ export default function DashboardPage() {
       setSelectedDesignIds([]);
       setSelectionMode(false);
       setShowDeletePopup(false);
+      setFeedbackPopup({
+        open: true,
+        title: "Designs Deleted",
+        message: "Selected designs were deleted successfully.",
+      });
     } catch (error) {
       console.error("Delete designs error:", error);
-      alert("Failed to delete selected designs.");
+      setFeedbackPopup({
+        open: true,
+        title: "Delete Failed",
+        message: "Failed to delete selected designs.",
+      });
     } finally {
       setDeleting(false);
     }
@@ -172,7 +191,11 @@ export default function DashboardPage() {
       });
 
       if (!res.ok) {
-        alert("Failed to rename design.");
+        setFeedbackPopup({
+          open: true,
+          title: "Rename Failed",
+          message: "Failed to rename design.",
+        });
         return;
       }
 
@@ -186,9 +209,18 @@ export default function DashboardPage() {
       );
       setEditingDesignId(null);
       setEditingDesignTitle("");
+      setFeedbackPopup({
+        open: true,
+        title: "Design Renamed",
+        message: "Design name updated successfully.",
+      });
     } catch (error) {
       console.error("Rename design error:", error);
-      alert("Failed to rename design.");
+      setFeedbackPopup({
+        open: true,
+        title: "Rename Failed",
+        message: "Failed to rename design.",
+      });
     } finally {
       setRenamingDesign(false);
     }
@@ -498,6 +530,13 @@ export default function DashboardPage() {
             </div>
           </div>
         )}
+
+        <FeedbackDialog
+          open={feedbackPopup.open}
+          title={feedbackPopup.title}
+          message={feedbackPopup.message}
+          onClose={() => setFeedbackPopup({ open: false, title: "", message: "" })}
+        />
 
       </div>
     </div>

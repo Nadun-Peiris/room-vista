@@ -1,12 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import FeedbackDialog from "@/components/FeedbackDialog";
+
+const parseErrorResponse = async (res: Response) => {
+  const raw = await res.text();
+  if (!raw) return "<empty response body>";
+  try {
+    const parsed = JSON.parse(raw) as { error?: string; details?: string };
+    if (parsed.details) return `${parsed.error || "Error"}: ${parsed.details}`;
+    if (parsed.error) return parsed.error;
+  } catch {
+    // Keep raw body if response is plain text.
+  }
+  return raw;
+};
 
 export default function FurniturePage() {
+  type FurnitureLibraryItem = {
+    _id: string;
+    name: string;
+    category: string;
+    widthInches?: number;
+    depthInches?: number;
+    heightFeet?: number;
+    modelUrl?: string;
+    thumbnailUrl?: string;
+  };
+
   // Modal & Selection State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -30,24 +55,31 @@ export default function FurniturePage() {
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   
   const [loading, setLoading] = useState(false);
-  const [furnitureList, setFurnitureList] = useState<any[]>([]);
+  const [furnitureList, setFurnitureList] = useState<FurnitureLibraryItem[]>([]);
 
   const router = useRouter();
+  const openFeedbackPopup = useCallback((title: string, message: string) => {
+    setFeedbackPopup({ open: true, title, message });
+  }, []);
 
   // --- Data Fetching ---
-  const fetchFurniture = async () => {
+  const fetchFurniture = useCallback(async () => {
     try {
       const token = await auth.currentUser?.getIdToken();
       const res = await fetch("/api/furniture", {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        openFeedbackPopup("Load Failed", "Failed to load furniture library.");
+        return;
+      }
       const data = await res.json();
       setFurnitureList(data);
     } catch (error) {
       console.error("Fetch error", error);
+      openFeedbackPopup("Load Failed", "Failed to load furniture library.");
     }
-  };
+  }, [openFeedbackPopup]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -74,8 +106,8 @@ export default function FurniturePage() {
   }, [router]);
 
   useEffect(() => {
-    fetchFurniture();
-  }, []);
+    void fetchFurniture();
+  }, [fetchFurniture]);
 
   // --- Handlers ---
   const resetForm = () => {
@@ -95,7 +127,7 @@ export default function FurniturePage() {
     setIsModalOpen(true);
   };
 
-  const openEditModal = (item: any) => {
+  const openEditModal = (item: FurnitureLibraryItem) => {
     setName(item.name);
     setCategory(item.category);
     setWidthInches(item.widthInches?.toString() || "");
@@ -119,10 +151,6 @@ export default function FurniturePage() {
       }
       return next;
     });
-  };
-
-  const openFeedbackPopup = (title: string, message: string) => {
-    setFeedbackPopup({ open: true, title, message });
   };
 
   const handleDeleteSelected = async () => {
@@ -158,7 +186,11 @@ export default function FurniturePage() {
       setSelectedItems(new Set());
       setSelectionMode(false);
       setShowDeletePopup(false);
-      fetchFurniture();
+      openFeedbackPopup(
+        "Furniture Deleted",
+        "Selected furniture items were deleted successfully."
+      );
+      await fetchFurniture();
     } catch (error) {
       console.error("Delete furniture error:", error);
       openFeedbackPopup(
@@ -229,7 +261,7 @@ export default function FurniturePage() {
         {/* FURNITURE GRID */}
         {furnitureList.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 bg-white/40 border-2 border-dashed border-gray-200 rounded-[2rem]">
-            <p className="text-gray-500 font-medium">No furniture found. Click "Add Furniture" to start building your library.</p>
+            <p className="text-gray-500 font-medium">No furniture found. Click &quot;Add Furniture&quot; to start building your library.</p>
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
@@ -269,6 +301,7 @@ export default function FurniturePage() {
                     }`}
                   />
                 )}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={item.thumbnailUrl}
                   alt={item.name}
@@ -330,29 +363,12 @@ export default function FurniturePage() {
         </div>
       )}
 
-      {feedbackPopup.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
-            <h3 className="text-lg font-extrabold text-gray-900">
-              {feedbackPopup.title}
-            </h3>
-            <p className="mt-2 text-sm text-gray-600">
-              {feedbackPopup.message}
-            </p>
-            <div className="mt-6 flex justify-end">
-              <button
-                type="button"
-                onClick={() =>
-                  setFeedbackPopup({ open: false, title: "", message: "" })
-                }
-                className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <FeedbackDialog
+        open={feedbackPopup.open}
+        title={feedbackPopup.title}
+        message={feedbackPopup.message}
+        onClose={() => setFeedbackPopup({ open: false, title: "", message: "" })}
+      />
 
       {/* MODAL OVERLAY */}
       {isModalOpen && (
@@ -479,6 +495,10 @@ export default function FurniturePage() {
                             },
                             body: formData,
                           });
+                          if (!uploadRes.ok) {
+                            const errorText = await parseErrorResponse(uploadRes);
+                            throw new Error(`Upload failed: ${errorText}`);
+                          }
 
                           const uploadData = await uploadRes.json();
                           modelUrl = uploadData.modelUrl;
@@ -487,7 +507,7 @@ export default function FurniturePage() {
 
                         if (editingId) {
                           // UPDATE
-                          await fetch("/api/furniture/update", {
+                          const updateRes = await fetch("/api/furniture/update", {
                             method: "PATCH",
                             headers: {
                               "Content-Type": "application/json",
@@ -504,6 +524,10 @@ export default function FurniturePage() {
                               thumbnailUrl,
                             }),
                           });
+                          if (!updateRes.ok) {
+                            const errorText = await parseErrorResponse(updateRes);
+                            throw new Error(`Update failed: ${errorText}`);
+                          }
 
                           openFeedbackPopup(
                             "Furniture Updated",
@@ -511,7 +535,7 @@ export default function FurniturePage() {
                           );
                         } else {
                           // CREATE
-                          await fetch("/api/furniture", {
+                          const createRes = await fetch("/api/furniture", {
                             method: "POST",
                             headers: {
                               "Content-Type": "application/json",
@@ -527,6 +551,10 @@ export default function FurniturePage() {
                               thumbnailUrl,
                             }),
                           });
+                          if (!createRes.ok) {
+                            const errorText = await parseErrorResponse(createRes);
+                            throw new Error(`Save failed: ${errorText}`);
+                          }
 
                           openFeedbackPopup(
                             "Furniture Saved",
