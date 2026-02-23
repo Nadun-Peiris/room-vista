@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, models, model } from "mongoose";
+import { Schema, type Document, models, model } from "mongoose";
 
 export interface IUser extends Document {
   firebaseUid: string;

@@ -105,6 +105,17 @@ export default function Sidebar({
     }));
   };
 
+  const projectNameInputId = "project-name-input";
+  const roomWidthInputId = "room-width-feet";
+  const roomLengthInputId = "room-length-feet";
+  const wallHeightInputId = "wall-height-feet";
+  const selectedFurnitureColorTextId = "selected-furniture-color-text";
+  const selectedFurnitureShadeId = "selected-furniture-shade";
+  const roomShapeSelectId = "room-shape-select";
+  const wallColorTextId = "wall-color-text";
+  const floorColorTextId = "floor-color-text";
+  const roomShadingId = "room-shading-intensity";
+
   return (
     <div className="relative z-10 w-80 bg-white/70 backdrop-blur-md border-r border-white/50 p-6 md:p-8 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] h-screen">
       {activePanel === "main" ? (
@@ -133,7 +144,7 @@ export default function Sidebar({
                     setProjectNameDraft(projectName);
                     setEditingProjectName(true);
                   }}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-gray-100"
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1 rounded-md hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
                   aria-label="Edit project name"
                 >
                   <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -143,7 +154,11 @@ export default function Sidebar({
               </div>
             ) : (
               <div className="space-y-2">
+                <label htmlFor={projectNameInputId} className="sr-only">
+                  Project name
+                </label>
                 <input
+                  id={projectNameInputId}
                   type="text"
                   value={projectNameDraft}
                   onChange={(e) => setProjectNameDraft(e.target.value)}
@@ -189,9 +204,10 @@ export default function Sidebar({
 
           <div className="flex gap-3">
             <div className="flex flex-col gap-1 w-full">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Width</label>
+              <label htmlFor={roomWidthInputId} className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1">Width</label>
               <div className="relative">
                 <input
+                  id={roomWidthInputId}
                   type="number"
                   value={roomWidthFeet}
                   onChange={(e) => setRoomWidthFeet(Number(e.target.value) || 0)}
@@ -203,9 +219,10 @@ export default function Sidebar({
             </div>
 
             <div className="flex flex-col gap-1 w-full">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Length</label>
+              <label htmlFor={roomLengthInputId} className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1">Length</label>
               <div className="relative">
                 <input
+                  id={roomLengthInputId}
                   type="number"
                   value={roomLengthFeet}
                   onChange={(e) => setRoomLengthFeet(Number(e.target.value) || 0)}
@@ -218,9 +235,10 @@ export default function Sidebar({
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Wall Height</label>
+            <label htmlFor={wallHeightInputId} className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1">Wall Height</label>
             <div className="relative">
               <input
+                id={wallHeightInputId}
                 type="number"
                 value={wallHeightFeet}
                 onChange={(e) => setWallHeightFeet(Number(e.target.value) || 0)}
@@ -258,17 +276,19 @@ export default function Sidebar({
                 {selectedFurnitureName}
               </p>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">
+                <label htmlFor={selectedFurnitureColorTextId} className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1">
                   Color
                 </label>
                 <div className="flex items-center gap-2 p-1.5 bg-white border border-gray-200 rounded-xl shadow-sm focus-within:ring-4 focus-within:ring-emerald-500/10 focus-within:border-emerald-500 transition-all">
                   <input
                     type="color"
+                    aria-label="Selected furniture color picker"
                     value={selectedFurnitureColor || "#64748b"}
                     onChange={(e) => onSelectedFurnitureColorChange(e.target.value)}
                     className="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-none [&::-webkit-color-swatch]:rounded-[6px] shadow-sm flex-shrink-0"
                   />
                   <input
+                    id={selectedFurnitureColorTextId}
                     type="text"
                     value={selectedFurnitureColor || "#64748b"}
                     onChange={(e) => onSelectedFurnitureColorChange(e.target.value)}
@@ -279,11 +299,12 @@ export default function Sidebar({
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">
+                <label htmlFor={selectedFurnitureShadeId} className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1">
                   Shading
                 </label>
                 <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                   <input
+                    id={selectedFurnitureShadeId}
                     type="range"
                     min="0"
                     max="1"
@@ -311,9 +332,10 @@ export default function Sidebar({
           <div className="space-y-4">
             {/* Shape Select */}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Shape</label>
+              <label htmlFor={roomShapeSelectId} className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1">Shape</label>
               <div className="relative">
                 <select
+                  id={roomShapeSelectId}
                   value={roomShape}
                   onChange={(e) => setRoomShape(e.target.value)}
                   className="w-full p-2.5 pr-10 rounded-xl bg-white border border-gray-200 text-gray-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all shadow-sm font-semibold text-sm cursor-pointer appearance-none"
@@ -334,15 +356,17 @@ export default function Sidebar({
 
             {/* Wall Color - Hybrid Input */}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Wall Color</label>
+              <label htmlFor={wallColorTextId} className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1">Wall Color</label>
               <div className="flex items-center gap-2 p-1.5 bg-white border border-gray-200 rounded-xl shadow-sm focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-500 transition-all">
                 <input
                   type="color"
+                  aria-label="Wall color picker"
                   value={wallColor}
                   onChange={(e) => setWallColor(e.target.value)}
                   className="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-none [&::-webkit-color-swatch]:rounded-[6px] shadow-sm flex-shrink-0"
                 />
                 <input
+                  id={wallColorTextId}
                   type="text"
                   value={wallColor}
                   onChange={(e) => setWallColor(e.target.value)}
@@ -355,15 +379,17 @@ export default function Sidebar({
 
             {/* Floor Color - Hybrid Input */}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest ml-1">Floor Color</label>
+              <label htmlFor={floorColorTextId} className="text-[10px] font-bold text-gray-600 uppercase tracking-widest ml-1">Floor Color</label>
               <div className="flex items-center gap-2 p-1.5 bg-white border border-gray-200 rounded-xl shadow-sm focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:border-blue-500 transition-all">
                 <input
                   type="color"
+                  aria-label="Floor color picker"
                   value={floorColor}
                   onChange={(e) => setFloorColor(e.target.value)}
                   className="w-8 h-8 rounded-lg cursor-pointer border-0 p-0 [&::-webkit-color-swatch-wrapper]:p-0 [&::-webkit-color-swatch]:border-none [&::-webkit-color-swatch]:rounded-[6px] shadow-sm flex-shrink-0"
                 />
                 <input
+                  id={floorColorTextId}
                   type="text"
                   value={floorColor}
                   onChange={(e) => setFloorColor(e.target.value)}
@@ -375,11 +401,12 @@ export default function Sidebar({
             </div>
 
             <div className="mt-6">
-              <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+              <label htmlFor={roomShadingId} className="block text-xs font-bold uppercase tracking-widest text-gray-600 mb-2">
                 Shading Intensity
               </label>
 
               <input
+                id={roomShadingId}
                 type="range"
                 min="0.2"
                 max="2"
@@ -443,6 +470,8 @@ export default function Sidebar({
                       type="button"
                       onClick={() => toggleCategory(category)}
                       className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/70 transition-colors"
+                      aria-expanded={isOpen}
+                      aria-controls={`category-${category}`}
                     >
                       <span className="text-sm font-extrabold text-gray-900 capitalize">
                         {category} ({items.length})
@@ -458,7 +487,7 @@ export default function Sidebar({
                     </button>
 
                     {isOpen && (
-                      <div className="px-3 pb-3 space-y-2">
+                      <div id={`category-${category}`} className="px-3 pb-3 space-y-2">
                         {items.map((item) => (
                           <button
                             key={item.id}

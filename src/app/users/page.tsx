@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { useRouter } from "next/navigation";
@@ -21,35 +21,38 @@ export default function UsersPage() {
   const [activeTab, setActiveTab] = useState<TabType>("pending");
   const [loading, setLoading] = useState(true);
 
-  const fetchUsers = async (token: string) => {
-    try {
-      const res = await fetch("/api/users", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+  const fetchUsers = useCallback(
+    async (token: string) => {
+      try {
+        const res = await fetch("/api/users", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-      if (res.status === 401) {
-        router.push("/login");
-        return;
+        if (res.status === 401) {
+          router.push("/login");
+          return;
+        }
+
+        if (res.status === 403) {
+          router.push("/dashboard");
+          return;
+        }
+
+        const data = await res.json();
+
+        if (res.ok) {
+          setUsers(data);
+        }
+      } catch (error) {
+        console.error("Failed to fetch users", error);
+      } finally {
+        setLoading(false);
       }
-
-      if (res.status === 403) {
-        router.push("/dashboard");
-        return;
-      }
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setUsers(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch users", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [router]
+  );
 
   const updateUserStatus = async (userId: string, status: TabType) => {
     try {
@@ -84,7 +87,7 @@ export default function UsersPage() {
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, [fetchUsers, router]);
 
   const filteredUsers = users.filter((user) => user.status === activeTab);
 

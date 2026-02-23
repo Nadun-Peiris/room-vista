@@ -39,28 +39,6 @@ const getMeshBounds = (object: Object3D) => {
   return hasMesh ? bounds : null;
 };
 
-const getLowestMeshY = (object: Object3D) => {
-  let lowestY = Number.POSITIVE_INFINITY;
-  const vertex = new Vector3();
-  object.updateMatrixWorld(true);
-
-  object.traverse((node) => {
-    const mesh = node as Mesh;
-    if (!mesh.isMesh || !mesh.geometry) return;
-    const position = mesh.geometry.getAttribute("position");
-    if (!position) return;
-
-    const stride = Math.max(1, Math.ceil(position.count / 3000));
-    for (let i = 0; i < position.count; i += stride) {
-      vertex.set(position.getX(i), position.getY(i), position.getZ(i));
-      vertex.applyMatrix4(mesh.matrixWorld);
-      if (vertex.y < lowestY) lowestY = vertex.y;
-    }
-  });
-
-  return Number.isFinite(lowestY) ? lowestY : 0;
-};
-
 const flattenSceneMeshes = (scene: Object3D) => {
   const flatGroup = new Group();
   scene.updateMatrixWorld(true);
@@ -82,90 +60,30 @@ const flattenSceneMeshes = (scene: Object3D) => {
   return flatGroup.children.length > 0 ? flatGroup : (scene.clone(true) as Object3D);
 };
 
-const collectMeshPoints = (object: Object3D, maxPoints = 4000) => {
-  const points: Array<[number, number, number]> = [];
+const getSupportPlaneY = (object: Object3D, percentile = 0.02) => {
+  const ys: number[] = [];
+  const vertex = new Vector3();
   object.updateMatrixWorld(true);
 
   object.traverse((node) => {
-    if (points.length >= maxPoints) return;
     const mesh = node as Mesh;
     if (!mesh.isMesh || !mesh.geometry) return;
     const position = mesh.geometry.getAttribute("position");
     if (!position) return;
 
-    const stride = Math.max(1, Math.ceil(position.count / 1200));
-    for (let i = 0; i < position.count && points.length < maxPoints; i += stride) {
-      const x = position.getX(i);
-      const y = position.getY(i);
-      const z = position.getZ(i);
-      points.push([x, y, z]);
+    const stride = Math.max(1, Math.ceil(position.count / 2000));
+    for (let i = 0; i < position.count; i += stride) {
+      vertex.set(position.getX(i), position.getY(i), position.getZ(i));
+      vertex.applyMatrix4(mesh.matrixWorld);
+      ys.push(vertex.y);
     }
   });
 
-  return points;
-};
-
-const estimateSupportTilt = (points: Array<[number, number, number]>) => {
-  if (points.length < 12) {
-    return { tiltX: 0, tiltZ: 0 };
-  }
-
-  const center = [0, 0, 0] as [number, number, number];
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  for (const [x, y, z] of points) {
-    center[0] += x;
-    center[1] += y;
-    center[2] += z;
-    if (y < minY) minY = y;
-    if (y > maxY) maxY = y;
-  }
-  center[0] /= points.length;
-  center[1] /= points.length;
-  center[2] /= points.length;
-
-  const centered = points.map(([x, y, z]) => [x - center[0], y - center[1], z - center[2]] as [number, number, number]);
-  const epsilon = Math.max(0.002, (maxY - minY) * 0.008);
-
-  let bestTiltX = 0;
-  let bestTiltZ = 0;
-  let bestScore = Number.NEGATIVE_INFINITY;
-
-  for (let rxDeg = -18; rxDeg <= 18; rxDeg += 3) {
-    const rx = (rxDeg * Math.PI) / 180;
-    const cosX = Math.cos(rx);
-    const sinX = Math.sin(rx);
-
-    for (let rzDeg = -18; rzDeg <= 18; rzDeg += 3) {
-      const rz = (rzDeg * Math.PI) / 180;
-      const cosZ = Math.cos(rz);
-      const sinZ = Math.sin(rz);
-
-      let localMinY = Number.POSITIVE_INFINITY;
-      for (const [x, y, z] of centered) {
-        const y1 = y * cosX - z * sinX;
-        const y2 = x * sinZ + y1 * cosZ;
-        if (y2 < localMinY) localMinY = y2;
-      }
-
-      let supportCount = 0;
-      for (const [x, y, z] of centered) {
-        const y1 = y * cosX - z * sinX;
-        const y2 = x * sinZ + y1 * cosZ;
-        if (Math.abs(y2 - localMinY) <= epsilon) supportCount += 1;
-      }
-
-      const anglePenalty = (Math.abs(rxDeg) + Math.abs(rzDeg)) * 0.45;
-      const score = supportCount - anglePenalty;
-      if (score > bestScore) {
-        bestScore = score;
-        bestTiltX = rx;
-        bestTiltZ = rz;
-      }
-    }
-  }
-
-  return { tiltX: bestTiltX, tiltZ: bestTiltZ };
+  if (ys.length === 0) return 0;
+  ys.sort((a, b) => a - b);
+  const clampedPercentile = Math.max(0, Math.min(1, percentile));
+  const idx = Math.min(ys.length - 1, Math.floor((ys.length - 1) * clampedPercentile));
+  return ys[idx];
 };
 
 interface ThreeDProps {
@@ -355,7 +273,7 @@ function FurnitureAsset({
   shadeIntensity: number;
   color: string;
 }) {
-  const FLOOR_SNAP_OFFSET = 0.02;
+  const FLOOR_CONTACT_EPSILON = 0.05;
   const [sourceScene, setSourceScene] = useState<Object3D | null>(null);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
@@ -400,22 +318,16 @@ function FurnitureAsset({
     const tintColor = new Color(color);
     const clampedShade = Math.max(0, Math.min(1, shadeIntensity));
 
-    // Keep furniture upright. Correct obvious Z-up assets once, then only rotate around Y.
+    // Keep furniture upright and only rotate around Y.
     let bestYRotation = 0;
     let bestScore = Number.POSITIVE_INFINITY;
     cloned.rotation.set(0, 0, 0);
-    cloned.updateMatrixWorld(true);
-    const sampledPoints = collectMeshPoints(cloned);
-    const { tiltX, tiltZ } = estimateSupportTilt(sampledPoints);
-    const baseXRotation = tiltX;
-    const baseZRotation = tiltZ;
-    cloned.rotation.set(baseXRotation, 0, baseZRotation);
     cloned.updateMatrixWorld(true);
 
     const targetWidthDepthRatio = widthFeet / Math.max(depthFeet, 1e-3);
 
     for (const ry of Y_ORIENTATION_STEPS) {
-      cloned.rotation.set(baseXRotation, ry, baseZRotation);
+      cloned.rotation.set(0, ry, 0);
       cloned.updateMatrixWorld(true);
 
       const candidateBounds = getMeshBounds(cloned) ?? new Box3().setFromObject(cloned);
@@ -434,7 +346,7 @@ function FurnitureAsset({
       }
     }
 
-    cloned.rotation.set(baseXRotation, bestYRotation, baseZRotation);
+    cloned.rotation.set(0, bestYRotation, 0);
     cloned.updateMatrixWorld(true);
 
     cloned.traverse((node) => {
@@ -500,20 +412,17 @@ function FurnitureAsset({
       cloned.scale.z * scaleZ
     );
 
-    // 3) Re-ground after scaling to eliminate any float caused by transforms.
-    const lowestYFirstPass = getLowestMeshY(cloned);
-    cloned.position.y -= lowestYFirstPass + FLOOR_SNAP_OFFSET;
-
-    // One more pass after translation to remove residual float from sampled bounds.
-    const lowestYSecondPass = getLowestMeshY(cloned);
-    cloned.position.y -= lowestYSecondPass + FLOOR_SNAP_OFFSET;
+    // 3) Final floor snap using a low-percentile support plane.
+    // This ignores tiny outlier vertices that can make visible geometry hover.
+    const supportY = getSupportPlaneY(cloned, 0.001);
+    cloned.position.y -= supportY + FLOOR_CONTACT_EPSILON;
 
     return cloned;
-  }, [modelUrl, sourceScene, widthFeet, heightFeet, depthFeet, shadeIntensity, color]);
+  }, [modelUrl, sourceScene, widthFeet, heightFeet, depthFeet, shadeIntensity, color, FLOOR_CONTACT_EPSILON]);
 
   if (!preparedModel || !modelUrl || failedUrl === modelUrl) {
     return (
-      <mesh position={[0, heightFeet / 2 - FLOOR_SNAP_OFFSET, 0]} castShadow receiveShadow>
+      <mesh position={[0, heightFeet / 2, 0]} castShadow receiveShadow>
         <boxGeometry args={[widthFeet, heightFeet, depthFeet]} />
         <meshStandardMaterial
           color={color}

@@ -80,42 +80,61 @@ export default function LoginPage() {
           <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
             Welcome Back
           </h1>
-          <p className="text-gray-500 text-sm font-medium">
+          <p className="text-gray-600 text-sm font-medium">
             Please enter your details
           </p>
         </div>
 
         <div className="flex flex-col gap-4">
           {/* Email */}
+          <label
+            htmlFor="login-email"
+            className="text-xs font-bold text-gray-600 ml-1 uppercase tracking-widest"
+          >
+            Email Address
+          </label>
           <input
+            id="login-email"
             type="email"
             placeholder="Email Address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
             className="p-3 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 
-                       focus:outline-none focus:ring-4 focus:ring-emerald-500/10 
+                       focus:outline-none focus:ring-4 focus:ring-emerald-500/20 
                        focus:border-emerald-500 transition-all shadow-sm"
             required
+            aria-describedby={message ? "login-form-message" : undefined}
           />
 
           {/* Password */}
           <div className="flex flex-col gap-2">
+            <label
+              htmlFor="login-password"
+              className="text-xs font-bold text-gray-600 ml-1 uppercase tracking-widest"
+            >
+              Password
+            </label>
             <div className="relative">
               <input
+                id="login-password"
                 type={showPassword ? "text" : "password"}
                 placeholder="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 className="w-full p-3 pr-11 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 
-                         focus:outline-none focus:ring-4 focus:ring-emerald-500/10 
+                         focus:outline-none focus:ring-4 focus:ring-emerald-500/20 
                          focus:border-emerald-500 transition-all shadow-sm"
                 required
+                aria-describedby={message ? "login-form-message" : undefined}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 rounded-md"
                 aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
               >
                 {showPassword ? (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -136,7 +155,7 @@ export default function LoginPage() {
             <div className="flex justify-end px-1">
               <Link
                 href="/reset-password"
-                className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 transition-colors"
+                className="text-xs font-semibold text-emerald-700 hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 rounded-sm transition-colors"
               >
                 Forgot password?
               </Link>
@@ -159,14 +178,19 @@ export default function LoginPage() {
           Don&apos;t have an account?{" "}
           <Link
             href="/signup"
-            className="text-emerald-600 hover:text-emerald-700 font-bold underline underline-offset-4 transition-colors"
+            className="text-emerald-700 hover:text-emerald-800 font-bold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 rounded-sm transition-colors"
           >
             Create Account
           </Link>
         </p>
 
         {message && (
-          <div className="text-xs text-center p-3 rounded-xl border bg-red-50 border-red-100 text-red-600">
+          <div
+            id="login-form-message"
+            role="alert"
+            aria-live="assertive"
+            className="text-xs text-center p-3 rounded-xl border bg-red-50 border-red-200 text-red-700"
+          >
             {message}
           </div>
         )}

@@ -66,53 +66,63 @@ export default function SignupPage() {
           <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">
             Create Account
           </h1>
-          <p className="text-gray-500 text-sm font-medium">Join our team of designers</p>
+          <p className="text-gray-600 text-sm font-medium">Join our team of designers</p>
         </div>
 
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-gray-400 ml-1 uppercase tracking-widest">Full Name</label>
+            <label htmlFor="signup-name" className="text-xs font-bold text-gray-600 ml-1 uppercase tracking-widest">Full Name</label>
             <input
+              id="signup-name"
               type="text"
               placeholder="e.g. Jane Doe"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              autoComplete="name"
               className="p-3 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 
-                         focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm"
+                         focus:outline-none focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-sm"
               required
+              aria-describedby={message ? "signup-form-message" : undefined}
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-gray-400 ml-1 uppercase tracking-widest">Email Address</label>
+            <label htmlFor="signup-email" className="text-xs font-bold text-gray-600 ml-1 uppercase tracking-widest">Email Address</label>
             <input
+              id="signup-email"
               type="email"
               placeholder="jane@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               className="p-3 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 
-                         focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm"
+                         focus:outline-none focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-sm"
               required
+              aria-describedby={message ? "signup-form-message" : undefined}
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-gray-400 ml-1 uppercase tracking-widest">Password</label>
+            <label htmlFor="signup-password" className="text-xs font-bold text-gray-600 ml-1 uppercase tracking-widest">Password</label>
             <div className="relative">
               <input
+                id="signup-password"
                 type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
                 className="w-full p-3 pr-11 rounded-xl bg-white border border-gray-200 text-gray-900 placeholder:text-gray-400 
-                         focus:outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all shadow-sm"
+                         focus:outline-none focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-sm"
                 required
+                aria-describedby={message ? "signup-form-message" : undefined}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 rounded-md"
                 aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
               >
                 {showPassword ? (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -147,7 +157,7 @@ export default function SignupPage() {
             Already have an account?{" "}
             <Link 
               href="/login" 
-              className="text-emerald-600 hover:text-emerald-700 font-bold underline underline-offset-4 transition-colors"
+              className="text-emerald-700 hover:text-emerald-800 font-bold underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40 rounded-sm transition-colors"
             >
               Login
             </Link>
@@ -155,11 +165,16 @@ export default function SignupPage() {
         </div>
 
         {message && (
-          <div className={`text-sm text-center p-3 rounded-xl border animate-in fade-in duration-300 ${
+          <div
+            id="signup-form-message"
+            role={message.includes("successful") ? "status" : "alert"}
+            aria-live={message.includes("successful") ? "polite" : "assertive"}
+            className={`text-sm text-center p-3 rounded-xl border animate-in fade-in duration-300 ${
             message.includes("successful") 
-              ? "bg-emerald-50 border-emerald-100 text-emerald-700" 
-              : "bg-red-50 border-red-100 text-red-700"
-          }`}>
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
+              : "bg-red-50 border-red-200 text-red-700"
+          }`}
+          >
             {message}
           </div>
         )}

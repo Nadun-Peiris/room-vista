@@ -264,6 +264,8 @@ function EditorPageContent() {
   const searchParams = useSearchParams();
   const designId = searchParams.get("designId");
   const initialProjectName = searchParams.get("projectName")?.trim() || "";
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   const addFurnitureToRoom = (item: FurnitureLibraryItem) => {
     const widthPx = item.widthInches * PIXELS_PER_INCH;
@@ -541,6 +543,56 @@ function EditorPageContent() {
   }, [designId]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const checkAuth = async (user: { getIdToken: () => Promise<string> } | null) => {
+      if (!isMounted) return;
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/me", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) {
+          router.push("/login");
+          return;
+        }
+
+        const data = await res.json();
+        if (data.status !== "active") {
+          router.push("/dashboard");
+          return;
+        }
+
+        if (isMounted) {
+          setIsAuthorized(true);
+          setAuthChecked(true);
+        }
+      } catch {
+        router.push("/login");
+      }
+    };
+
+    void checkAuth(auth.currentUser);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      void checkAuth(user);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    if (!isAuthorized) return;
     if (!designId) return;
     let isMounted = true;
 
@@ -608,13 +660,14 @@ function EditorPageContent() {
       isMounted = false;
       unsubscribe();
     };
-  }, [clearHistory, designId, openFeedbackPopup]);
+  }, [clearHistory, designId, isAuthorized, openFeedbackPopup]);
 
   useEffect(() => {
     let isMounted = true;
     let unsubscribe: (() => void) | undefined;
 
     const initFurnitureLibrary = async () => {
+      if (!isAuthorized) return;
       try {
         const firebase = await import("@/lib/firebase");
         const authModule = await import("firebase/auth");
@@ -667,13 +720,13 @@ function EditorPageContent() {
       }
     };
 
-    initFurnitureLibrary();
+    void initFurnitureLibrary();
 
     return () => {
       isMounted = false;
       unsubscribe?.();
     };
-  }, [openFeedbackPopup]);
+  }, [isAuthorized, openFeedbackPopup]);
 
   const checkDeselect = (e: KonvaEventObject<PointerEvent>) => {
     const clickedOnEmpty = e.target === e.target.getStage();
@@ -1005,6 +1058,15 @@ function EditorPageContent() {
   );
   const hasUnsavedChanges = lastSavedSnapshot === null || currentSnapshot !== lastSavedSnapshot;
 
+  if (!authChecked || !isAuthorized) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
+        <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-emerald-600 font-bold animate-pulse">Checking access...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="relative h-screen bg-gray-50 overflow-hidden font-sans flex">
       {/* Dynamic Background Accents */}
@@ -1066,6 +1128,9 @@ function EditorPageContent() {
             <div className="flex items-center gap-3 min-w-0">
               <span className="text-sm font-bold text-gray-400 tracking-widest uppercase whitespace-nowrap">
                 Workspace <span className="text-gray-600 ml-1">{roomWidthFeet}ft × {roomLengthFeet}ft</span>
+              </span>
+              <span className="sr-only" aria-live="polite">
+                {hasUnsavedChanges ? "You have unsaved changes" : "All changes saved"}
               </span>
               <button
                 type="button"
@@ -1141,6 +1206,7 @@ function EditorPageContent() {
                 type="button"
                 onClick={() => setViewMode(viewMode === "2d" ? "3d" : "2d")}
                 className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-700 hover:border-emerald-300 hover:text-emerald-700 transition"
+                aria-pressed={viewMode === "3d"}
               >
                 {viewMode === "2d" ? (
                   <>
@@ -1574,12 +1640,21 @@ function EditorPageContent() {
 
       {showNamePopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
-            <h3 className="text-lg font-extrabold text-gray-900">Name Your Project</h3>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="name-project-title"
+            className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6"
+          >
+            <h3 id="name-project-title" className="text-lg font-extrabold text-gray-900">Name Your Project</h3>
             <p className="mt-2 text-sm text-gray-600">
               Enter a name before you start designing.
             </p>
+            <label htmlFor="new-project-name-input" className="sr-only">
+              Project name
+            </label>
             <input
+              id="new-project-name-input"
               type="text"
               value={newProjectNameInput}
               onChange={(e) => setNewProjectNameInput(e.target.value)}
@@ -1616,8 +1691,13 @@ function EditorPageContent() {
 
       {showExitConfirmPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6">
-            <h3 className="text-lg font-extrabold text-gray-900">Leave Editor?</h3>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="leave-editor-title"
+            className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6"
+          >
+            <h3 id="leave-editor-title" className="text-lg font-extrabold text-gray-900">Leave Editor?</h3>
             <p className="mt-2 text-sm text-gray-600">
               Do you want to save this design before going back to the dashboard?
             </p>
