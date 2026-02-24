@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -14,6 +14,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        router.replace("/dashboard");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +75,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-gray-50 overflow-hidden font-sans">
+    <div className="relative flex items-center justify-center bg-gray-50 overflow-hidden font-sans px-4 py-16">
       {/* Background accents */}
       <div className="absolute top-[-5%] left-[-5%] w-80 h-80 bg-emerald-100 rounded-full blur-[100px] opacity-60" />
       <div className="absolute bottom-[-5%] right-[-5%] w-80 h-80 bg-blue-100 rounded-full blur-[100px] opacity-60" />

@@ -51,7 +51,7 @@ export default function SignupPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-gray-50 overflow-hidden font-sans">
+    <div className="relative flex items-center justify-center bg-gray-50 overflow-hidden font-sans px-4 py-16">
       {/* Matching Background Blobs from Login (Emerald & Blue) */}
       <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-emerald-100 rounded-full blur-[120px] opacity-60" />
       <div className="absolute bottom-[-10%] right-[-5%] w-[500px] h-[500px] bg-blue-100 rounded-full blur-[120px] opacity-60" />

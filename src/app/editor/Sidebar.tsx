@@ -38,7 +38,6 @@ interface SidebarProps {
   selectedFurnitureShade?: number | null;
   onSelectedFurnitureColorChange: (color: string) => void;
   onSelectedFurnitureShadeChange: (shade: number) => void;
-  onRequestExit: () => void;
 }
 
 export default function Sidebar({
@@ -66,7 +65,6 @@ export default function Sidebar({
   selectedFurnitureShade,
   onSelectedFurnitureColorChange,
   onSelectedFurnitureShadeChange,
-  onRequestExit,
 }: SidebarProps) {
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState(projectName);
@@ -120,18 +118,6 @@ export default function Sidebar({
     <div className="relative z-10 w-80 bg-white/70 backdrop-blur-md border-r border-white/50 p-6 md:p-8 flex flex-col shadow-[4px_0_24px_rgba(0,0,0,0.02)] h-screen">
       {activePanel === "main" ? (
         <>
-          {/* Logo / Header */}
-          <div className="mb-6 flex items-center gap-3">
-            <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-600/20 flex-shrink-0">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-              </svg>
-            </div>
-            <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">
-              Room Vista
-            </h2>
-          </div>
-
           <div className="group mb-5 p-3 bg-white/70 border border-white/80 rounded-2xl shadow-sm">
             {!editingProjectName ? (
               <div className="flex items-center justify-between gap-2">
@@ -424,17 +410,6 @@ export default function Sidebar({
         </div>
 
           </div>
-          {/* BOTTOM ACTION AREA */}
-          <div className="mt-auto pt-6 border-t border-gray-200/50">
-            <button
-              type="button"
-              onClick={onRequestExit}
-              className="flex items-center justify-center gap-2 w-full bg-white border border-gray-200 text-gray-700 hover:text-emerald-600 hover:border-emerald-200 font-bold p-3.5 rounded-xl transition-all shadow-sm active:scale-95"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-              Back to Dashboard
-            </button>
-          </div>
         </>
       ) : (
         <>
@@ -516,16 +491,6 @@ export default function Sidebar({
             )}
           </div>
 
-          <div className="mt-auto pt-6 border-t border-gray-200/50">
-            <button
-              type="button"
-              onClick={onRequestExit}
-              className="flex items-center justify-center gap-2 w-full bg-white border border-gray-200 text-gray-700 hover:text-emerald-600 hover:border-emerald-200 font-bold p-3.5 rounded-xl transition-all shadow-sm active:scale-95"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-              Back to Dashboard
-            </button>
-          </div>
         </>
       )}
     </div>

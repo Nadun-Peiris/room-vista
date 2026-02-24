@@ -368,11 +368,13 @@ function EditorPageContent() {
     message: string;
   }>({ open: false, title: "", message: "" });
   const [showExitConfirmPopup, setShowExitConfirmPopup] = useState(false);
+  const [pendingExitPath, setPendingExitPath] = useState("/dashboard");
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<string | null>(null);
   const [renamingProject, setRenamingProject] = useState(false);
   const [liveRotation, setLiveRotation] = useState<{ id: string; angle: number } | null>(null);
   const shapeRef = useRef<Konva.Rect>(null);
   const trRef = useRef<Konva.Transformer>(null);
+  const allowHistoryBackRef = useRef(false);
   const undoStackRef = useRef<FurnitureSnapshot[]>([]);
   const redoStackRef = useRef<FurnitureSnapshot[]>([]);
   const [, setHistoryTick] = useState(0);
@@ -545,10 +547,12 @@ function EditorPageContent() {
   useEffect(() => {
     let isMounted = true;
 
-    const checkAuth = async (user: { getIdToken: () => Promise<string> } | null) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!isMounted) return;
       if (!user) {
-        router.push("/login");
+        setIsAuthorized(false);
+        setAuthChecked(true);
+        router.replace("/login");
         return;
       }
 
@@ -561,13 +565,17 @@ function EditorPageContent() {
         });
 
         if (!res.ok) {
-          router.push("/login");
+          setIsAuthorized(false);
+          setAuthChecked(true);
+          router.replace("/login");
           return;
         }
 
         const data = await res.json();
         if (data.status !== "active") {
-          router.push("/dashboard");
+          setIsAuthorized(false);
+          setAuthChecked(true);
+          router.replace("/dashboard");
           return;
         }
 
@@ -576,13 +584,11 @@ function EditorPageContent() {
           setAuthChecked(true);
         }
       } catch {
-        router.push("/login");
+        if (!isMounted) return;
+        setIsAuthorized(false);
+        setAuthChecked(true);
+        router.replace("/login");
       }
-    };
-
-    void checkAuth(auth.currentUser);
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      void checkAuth(user);
     });
 
     return () => {
@@ -929,24 +935,23 @@ function EditorPageContent() {
   };
 
   const handleRequestExit = () => {
-    if (!hasUnsavedChanges) {
-      router.push("/dashboard");
-      return;
-    }
+    setPendingExitPath("/dashboard");
     setShowExitConfirmPopup(true);
   };
 
   const handleExitWithoutSave = () => {
     if (saving) return;
+    allowHistoryBackRef.current = true;
     setShowExitConfirmPopup(false);
-    router.push("/dashboard");
+    router.push(pendingExitPath);
   };
 
   const handleSaveAndExit = async () => {
     const saved = await handleSaveDesign({ showSuccessPopup: false });
     if (!saved) return;
+    allowHistoryBackRef.current = true;
     setShowExitConfirmPopup(false);
-    router.push("/dashboard");
+    router.push(pendingExitPath);
   };
 
   const handleConfirmProjectName = () => {
@@ -1058,6 +1063,64 @@ function EditorPageContent() {
   );
   const hasUnsavedChanges = lastSavedSnapshot === null || currentSnapshot !== lastSavedSnapshot;
 
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    const handleLinkAttempt = (event: MouseEvent) => {
+      if (!hasUnsavedChanges || showExitConfirmPopup) return;
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const target = event.target as Element | null;
+      const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
+      if (!anchor) return;
+      if (anchor.target === "_blank" || anchor.hasAttribute("download")) return;
+
+      const href = anchor.getAttribute("href");
+      if (!href || href.startsWith("#")) return;
+
+      const url = new URL(href, window.location.origin);
+      if (url.origin !== window.location.origin) return;
+
+      const nextPath = `${url.pathname}${url.search}${url.hash}`;
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (nextPath === currentPath) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setPendingExitPath(nextPath);
+      setShowExitConfirmPopup(true);
+    };
+
+    document.addEventListener("click", handleLinkAttempt, true);
+    return () => document.removeEventListener("click", handleLinkAttempt, true);
+  }, [hasUnsavedChanges, showExitConfirmPopup]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    const handlePopState = () => {
+      if (allowHistoryBackRef.current) return;
+      window.history.pushState({ editorGuard: true }, "", window.location.href);
+      setPendingExitPath("/dashboard");
+      setShowExitConfirmPopup(true);
+    };
+
+    window.history.pushState({ editorGuard: true }, "", window.location.href);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [hasUnsavedChanges]);
+
   if (!authChecked || !isAuthorized) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
@@ -1108,7 +1171,6 @@ function EditorPageContent() {
         }
         onSelectedFurnitureColorChange={handleSelectedFurnitureColorChange}
         onSelectedFurnitureShadeChange={handleSelectedFurnitureShadeChange}
-        onRequestExit={handleRequestExit}
       />
 
       {/* CANVAS AREA */}
@@ -1224,6 +1286,16 @@ function EditorPageContent() {
                     Switch to 2D
                   </>
                 )}
+              </button>
+              <button
+                type="button"
+                onClick={handleRequestExit}
+                className="h-8 px-3 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white text-xs font-bold text-gray-700 hover:border-emerald-300 hover:text-emerald-700 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Back to Dashboard
               </button>
               <button
                 type="button"
@@ -1697,9 +1769,13 @@ function EditorPageContent() {
             aria-labelledby="leave-editor-title"
             className="w-full max-w-md rounded-2xl bg-white border border-gray-200 shadow-xl p-6"
           >
-            <h3 id="leave-editor-title" className="text-lg font-extrabold text-gray-900">Leave Editor?</h3>
+            <h3 id="leave-editor-title" className="text-lg font-extrabold text-gray-900">
+              {hasUnsavedChanges ? "Leave Editor?" : "Leave editor?"}
+            </h3>
             <p className="mt-2 text-sm text-gray-600">
-              Do you want to save this design before going back to the dashboard?
+              {hasUnsavedChanges
+                ? "Do you want to save this design before leaving the editor?"
+                : "No unsaved changes detected. Do you want to leave the editor?"}
             </p>
             <div className="mt-6 flex justify-end gap-3 flex-wrap">
               <button
@@ -1710,22 +1786,34 @@ function EditorPageContent() {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                onClick={handleExitWithoutSave}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 font-semibold hover:bg-red-100 disabled:opacity-50"
-              >
-                Don&apos;t Save
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveAndExit}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100 disabled:opacity-50"
-              >
-                {saving ? "Saving..." : "Save and Exit"}
-              </button>
+              {hasUnsavedChanges ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleExitWithoutSave}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-600 font-semibold hover:bg-red-100 disabled:opacity-50"
+                  >
+                    Don&apos;t Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveAndExit}
+                    disabled={saving}
+                    className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100 disabled:opacity-50"
+                  >
+                    {saving ? "Saving..." : "Save and Exit"}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleExitWithoutSave}
+                  className="px-4 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100"
+                >
+                  Leave
+                </button>
+              )}
             </div>
           </div>
         </div>
