@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Room Vista
 
-## Getting Started
+Room Vista is a web-based interior design tool developed for the PUSL3122 HCI, Computer Graphics, and Visualisation coursework.  
+It allows designers to create room layouts in 2D and preview them in 3D with customizable furniture, lighting, and room appearance.
 
-First, run the development server:
+## Live Deployment
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Vercel: `https://room-vista-sooty.vercel.app/`
+
+## Demo Accounts
+
+Use these credentials for testing:
+
+### Super Admin
+- Email: `superadmin@roomvista.com`
+- Password: `Superadmin@123`
+
+### Designer
+- Email: `designer@roomvista.com`
+- Password: `Designer@123`
+
+## Core Features
+
+- Firebase authentication with role-based access (`superadmin`, `designer`)
+- Admin approval workflow for designer accounts
+- Furniture library management (add/edit/delete items, upload GLB + thumbnails)
+- 2D room editor with:
+  - Grid + ruler
+  - Drag, rotate, resize furniture
+  - Collision checks
+  - Undo/redo
+  - Save/update/load/delete designs
+- 3D room visualization with:
+  - Real-time 2D to 3D mapping
+  - GLB model rendering
+  - Room/furniture color control
+  - Shading/light intensity controls
+
+## Tech Stack
+
+- Next.js 16 (App Router)
+- React 19 + TypeScript
+- Tailwind CSS
+- Konva / React Konva (2D editor)
+- Three.js + React Three Fiber + Drei (3D view)
+- Firebase Auth + Firebase Admin SDK
+- MongoDB + Mongoose
+- Cloudinary (model/thumbnail upload)
+
+## Project Structure
+
+```txt
+src/
+  app/
+    api/                # Auth, users, designs, furniture endpoints
+    dashboard/          # Saved designs and design management
+    editor/             # 2D/3D editor experience
+    furniture/          # Superadmin furniture management
+    login/signup/       # Authentication pages
+  components/           # Shared UI components (e.g. dialogs)
+  lib/                  # Firebase, MongoDB, Cloudinary clients
+  models/               # Mongoose models
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create a `.env.local` file in the project root with:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```env
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
 
-## Learn More
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
 
-To learn more about Next.js, take a look at the following resources:
+MONGODB_URI=
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Local Setup
 
-## Deploy on Vercel
+```bash
+npm install
+npm run dev
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Then open `http://localhost:3000`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Useful Scripts
+
+```bash
+npm run dev      # start development server
+npm run lint     # run ESLint
+npm run build    # production build
+npm run start    # run production server
+```
+
+## Notes
+
+- This repository is coursework-focused and includes demo credentials for marking/testing.
+- For production use, rotate credentials and never expose account passwords in public documentation.
